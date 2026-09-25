@@ -2,7 +2,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const read = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
-const scripts = ['src/engine.js', 'src/sound.js', 'src/ui.js'].map(read).join('\n');
+const scripts = ['vendor/peerjs.min.js', 'src/engine.js', 'src/sound.js', 'src/net.js', 'src/ui.js'].map(read).join('\n');
 const html = read('src/index.html')
   .replace('/*STYLE*/', () => read('src/style.css'))
   .replace('/*SCRIPT*/', () => scripts);

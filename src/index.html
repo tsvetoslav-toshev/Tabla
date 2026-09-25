@@ -46,6 +46,7 @@
 
   <nav class="controls">
     <div class="match" id="matchInfo"></div>
+    <div class="net" id="netStatus" hidden></div>
     <div class="buttons">
       <button class="btn ghost" id="undoBtn" title="Назад (Ctrl+Z)"><svg viewBox="0 0 24 24"><path d="M9 7 4 12l5 5M4.5 12H15a5 5 0 0 1 0 10h-2"/></svg><span>Назад</span></button>
       <button class="btn primary" id="mainBtn"><span></span></button>
@@ -63,9 +64,10 @@
       <div class="logo-die b"><i></i><i></i><i></i></div>
     </div>
     <h1 id="setupTitle">Табла</h1>
-    <p class="sub">за двама на едно устройство</p>
+    <p class="sub">за двама — на едно устройство или онлайн</p>
+    <p class="join-note" id="joinNote" hidden>Поканен си на табла. Ти играеш с тъмните пулове — напиши името си.</p>
     <form id="setupForm" autocomplete="off">
-      <label class="field">
+      <label class="field host-only">
         <span class="token light" aria-hidden="true"></span>
         <span class="lbl">Светли пулове <small>прибират се долу вдясно</small></span>
         <input id="name0" maxlength="16" placeholder="Играч 1" spellcheck="false">
@@ -75,7 +77,7 @@
         <span class="lbl">Тъмни пулове <small>прибират се горе вдясно</small></span>
         <input id="name1" maxlength="16" placeholder="Играч 2" spellcheck="false">
       </label>
-      <fieldset class="chips" id="lengthChips">
+      <fieldset class="chips host-only" id="lengthChips">
         <legend>Мач до</legend>
         <button type="button" data-v="1">1</button>
         <button type="button" data-v="3">3</button>
@@ -84,8 +86,14 @@
         <button type="button" data-v="11">11</button>
         <button type="button" data-v="0" title="Без край">∞</button>
       </fieldset>
-      <button class="btn primary big" type="submit">Започни</button>
+      <button class="btn primary big" type="submit" id="startBtn">Играйте тук, на едно устройство</button>
       <button class="btn ghost big" type="button" id="resumeBtn" hidden>Продължи играта</button>
+      <div class="or host-only"><span>или</span></div>
+      <button class="btn ghost big host-only" type="button" id="hostBtn">
+        <svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/></svg>
+        Покани приятел онлайн
+      </button>
+      <p class="hint host-only">Онлайн: първото име е твоето, а приятелят пише своето, когато отвори линка.</p>
     </form>
   </div>
 </div>
@@ -100,6 +108,7 @@
     <label class="toggle"><input type="checkbox" id="optAuto"><span class="sw"></span>Край на хода без „Готово“</label>
     <button class="btn ghost wide danger" data-act="restart" data-confirm="Натисни пак, за да започнеш играта отначало">Играта отначало</button>
     <button class="btn ghost wide danger" data-act="newmatch" data-confirm="Натисни пак — резултатът се губи">Нов мач</button>
+    <button class="btn ghost wide danger" data-act="leave" id="leaveBtn" data-confirm="Натисни пак, за да излезеш" hidden>Напусни онлайн играта</button>
   </div>
 </div>
 
@@ -120,6 +129,9 @@
       <p>Натисни пул, после светещото поле. Или го хвани и го пусни. Двоен клик мести пула с най-големия зар. Светещите полета показват и ходове с двата зара наведнъж.</p>
       <p><kbd>Интервал</kbd> хвърляне / готово · <kbd>Ctrl</kbd>+<kbd>Z</kbd> назад · <kbd>Esc</kbd> отказ</p>
       <p>„Назад“ връща всеки ход и всяко хвърляне, но заровете остават същите — не може да се хвърля наново.</p>
+      <h3>Онлайн</h3>
+      <p>„Покани приятел онлайн“ дава линк. Прати го на приятеля си — щом го отвори и напише името си, играта започва и двамата виждате всеки ход, хвърляне и хванат пул в момента. Всеки вижда своите пулове долу. Онлайн „Назад“ връща само твоите ходове, докато не си натиснал „Готово“.</p>
+      <p>Ако връзката прекъсне или някой презареди страницата, играта продължава от същото място, щом се свържете отново.</p>
     </div>
     <button class="btn primary wide" data-act="close">Разбрах</button>
   </div>
@@ -140,10 +152,26 @@
     </div>
     <p class="target" id="overTarget"></p>
     <div class="row">
-      <button class="btn ghost" data-act="undo">Назад</button>
+      <button class="btn ghost" data-act="undo" id="overUndo">Назад</button>
       <button class="btn primary" data-act="next" id="overNext">Следваща игра</button>
     </div>
     <button class="btn link" data-act="newmatch" id="overNew" hidden>Нов мач с други имена</button>
+  </div>
+</div>
+
+<!-- online: invite and connecting -->
+<div class="overlay" id="lobby" role="dialog" aria-modal="true" aria-labelledby="lobbyTitle">
+  <div class="panel lobby">
+    <div class="pulse-ring" aria-hidden="true"><span></span><span></span><i></i></div>
+    <h2 id="lobbyTitle">Покани приятел</h2>
+    <p class="sub" id="lobbyText"></p>
+    <div class="invite" id="invite">
+      <input id="inviteLink" readonly aria-label="Линк за поканата">
+      <button class="btn primary" id="copyBtn" type="button">Копирай</button>
+    </div>
+    <button class="btn ghost wide" id="shareBtn" type="button" hidden>Изпрати…</button>
+    <p class="wait" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span id="lobbyStatus">Свързване…</span></p>
+    <button class="btn link" id="lobbyCancel" type="button">Отказ</button>
   </div>
 </div>
 

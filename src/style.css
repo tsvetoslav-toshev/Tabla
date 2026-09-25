@@ -389,11 +389,41 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
 @keyframes glow { 50% { opacity: 0.45; } }
 @keyframes spotIn { from { scale: 0.4; opacity: 0; } }
 @keyframes spin { to { rotate: 360deg; } }
+@keyframes blink { 50% { opacity: 0.3; } }
+@keyframes ripple { from { transform: scale(0.4); opacity: 0.9; } to { transform: scale(1.2); opacity: 0; } }
 @keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.5); } 100% { transform: scale(1); } }
 @keyframes swapIn { from { opacity: 0; transform: translateY(6px); } }
 @keyframes wobble { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(6deg) translateY(-4px); } }
 @keyframes float { 50% { translate: 0 -6px; } }
 @keyframes trophy { from { transform: scale(0.3) rotate(-20deg); opacity: 0; } }
+
+/* ---------- online ---------- */
+.controls .net { text-align: center; font-size: 0.82rem; color: var(--danger); display: flex; align-items: center; justify-content: center; gap: 6px; }
+.controls .net::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: blink 1.2s ease-in-out infinite; }
+.controls .net.ok { color: #9fd49a; }
+.controls .net.ok::before { animation: none; box-shadow: 0 0 8px currentColor; }
+.player.away .name { opacity: 0.55; }
+.join-note { text-align: center; margin: -10px 0 20px; padding: 10px 12px; border-radius: 12px; background: rgba(231, 184, 92, 0.12); color: var(--gold-hi); }
+.or { display: flex; align-items: center; gap: 12px; margin: 16px 0 6px; color: var(--text-dim); font-size: 0.85rem; }
+.or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+#setupForm .or + .btn { margin-top: 10px; }
+.hint { margin: 10px 0 0; text-align: center; font-size: 0.8rem; color: var(--text-dim); }
+.lobby { text-align: center; }
+.lobby .sub { margin-bottom: 18px; }
+.invite { display: flex; gap: 8px; margin-bottom: 10px; }
+.invite input {
+  flex: 1; min-width: 0; height: 46px; padding: 0 12px; border-radius: 10px;
+  background: rgba(0, 0, 0, 0.35); border: 1px solid var(--line); color: var(--text);
+  font: 0.85rem var(--font-ui); user-select: all;
+}
+.invite .btn { flex: none; }
+.wait { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 16px 0 6px; color: var(--text-dim); min-height: 1.4em; }
+.spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--gold); animation: spin 0.9s linear infinite; flex: none; }
+.lobby.failed .spinner, #lobby.failed .spinner { display: none; }
+.pulse-ring { position: relative; width: 70px; height: 70px; margin: 0 auto 12px; }
+.pulse-ring i { position: absolute; inset: 22px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, var(--light-0), var(--light-1) 45%, var(--light-2)); }
+.pulse-ring span { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--gold); opacity: 0; animation: ripple 2.4s ease-out infinite; }
+.pulse-ring span + span { animation-delay: 1.2s; }
 
 /* small landscape screens (phones on their side) */
 @media (min-aspect-ratio: 5/4) and (max-height: 520px) {

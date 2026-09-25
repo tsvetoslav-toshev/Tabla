@@ -19,8 +19,16 @@
     W: 1000, H: 780, TOP: 25, BOTTOM: 755, MID: 390, PW: 65, PH: 300, D: 58,
     BAR_L: 415, BAR_R: 475, BAR_X: 445, TRAY_L: 890, TRAY_R: 975, TRAY_X: 932.5,
     LEFT_L: 25, RIGHT_L: 475, RIGHT_R: 865,
-    SIDE_X: [670, 220], // where each player's dice land: light on the right half, dark on the left
   };
+  // The player sitting at the bottom of the screen: light when two share one
+  // device, and online each player sees their own checkers at the bottom. The
+  // other view is the board mirrored top to bottom, so point i is drawn where
+  // point 23 - i would be.
+  let view = LIGHT;
+  const disp = (i) => (view === LIGHT ? i : 23 - i);
+  const atBottom = (p) => p === view;
+  /** Where a player's dice land: the bottom player's on the right half. */
+  const sideX = (p) => (atBottom(p) ? 670 : 220);
   const R = G.D / 2;
   const KEYS = [...Array.from({ length: 24 }, (_, i) => 'p' + i), 'bar', 'off'];
 
@@ -35,13 +43,13 @@
   /** Where the i-th of n checkers in a stack sits. */
   function slot(p, key, i, n) {
     if (key === 'off') {
-      return { x: G.TRAY_X, y: p === LIGHT ? G.BOTTOM - 12 - i * 19 : G.TOP + 12 + i * 19 };
+      return { x: G.TRAY_X, y: atBottom(p) ? G.BOTTOM - 12 - i * 19 : G.TOP + 12 + i * 19 };
     }
     if (key === 'bar') {
       const sp = n <= 1 ? G.D : Math.min(G.D, (G.PH - 30 - G.D) / (n - 1));
-      return { x: G.BAR_X, y: p === LIGHT ? G.MID + 36 + R + i * sp : G.MID - 36 - R - i * sp };
+      return { x: G.BAR_X, y: atBottom(p) ? G.MID + 36 + R + i * sp : G.MID - 36 - R - i * sp };
     }
-    const idx = +key.slice(1);
+    const idx = disp(+key.slice(1));
     const sp = n <= 5 ? G.D : (G.PH - G.D) / (n - 1);
     return { x: pointX(idx), y: isTop(idx) ? G.TOP + R + i * sp : G.BOTTOM - R - i * sp };
   }
@@ -53,11 +61,11 @@
     const top = y < G.MID;
     if (x >= G.LEFT_L && x < G.BAR_L) {
       const c = Math.floor((x - G.LEFT_L) / G.PW);
-      return top ? 12 + c : 11 - c;
+      return disp(top ? 12 + c : 11 - c);
     }
     if (x >= G.RIGHT_L && x < G.RIGHT_R) {
       const c = Math.floor((x - G.RIGHT_L) / G.PW);
-      return top ? 18 + c : 5 - c;
+      return disp(top ? 18 + c : 5 - c);
     }
     return null;
   }
@@ -144,20 +152,42 @@
     const box = $('#hls');
     for (let i = 0; i < 24; i++) {
       const d = document.createElement('div');
-      d.className = 'hl pt ' + (isTop(i) ? 'top' : 'bottom');
-      d.style.left = pointX(i) - G.PW / 2 + 'px';
-      d.style.top = (isTop(i) ? G.TOP : G.BOTTOM - G.PH) + 'px';
       d.dataset.key = String(i);
       box.appendChild(d);
     }
     for (const p of [LIGHT, DARK]) {
       const d = document.createElement('div');
       d.className = 'hl tray';
-      d.style.left = G.TRAY_L + 'px';
-      d.style.top = (p === LIGHT ? G.MID : G.TOP) + 'px';
       d.dataset.key = 'off' + p;
       box.appendChild(d);
     }
+    layoutHighlights();
+  }
+
+  function layoutHighlights() {
+    for (let i = 0; i < 24; i++) {
+      const d = document.querySelector(`#hls > div[data-key="${i}"]`);
+      const at = disp(i);
+      d.className = 'hl pt ' + (isTop(at) ? 'top' : 'bottom');
+      d.style.left = pointX(at) - G.PW / 2 + 'px';
+      d.style.top = (isTop(at) ? G.TOP : G.BOTTOM - G.PH) + 'px';
+    }
+    for (const p of [LIGHT, DARK]) {
+      document.querySelector(`.hl[data-key="off${p}"]`).style.top = (atBottom(p) ? G.MID : G.TOP) + 'px';
+    }
+  }
+
+  /** Turns the board so that `p` sits at the bottom. */
+  function setView(p) {
+    if (p === view) return;
+    view = p;
+    layoutHighlights();
+    for (const [el, i] of [[$('#card0'), view], [$('#card1'), 1 - view]]) {
+      el.dataset.p = String(i);
+      el.querySelector('.token').className = 'token ' + (i === LIGHT ? 'light' : 'dark');
+    }
+    reconcile(state.board, { animate: false });
+    syncDice();
   }
   const hlFor = (loc) => document.querySelector(`.hl[data-key="${loc === OFF ? 'off' + state.turn : loc}"]`);
 
@@ -307,13 +337,13 @@
     if (st.phase === 'opening') {
       if (!st.openingRoll) return [];
       return [
-        { v: st.openingRoll[0], x: G.SIDE_X[LIGHT], y: G.MID, from: LIGHT },
-        { v: st.openingRoll[1], x: G.SIDE_X[DARK], y: G.MID, from: DARK },
+        { v: st.openingRoll[0], x: sideX(LIGHT), y: G.MID, from: LIGHT },
+        { v: st.openingRoll[1], x: sideX(DARK), y: G.MID, from: DARK },
       ];
     }
     if (!st.dice.length || st.phase === 'roll') return [];
     const [a, b] = st.dice;
-    const cx = G.SIDE_X[st.turn];
+    const cx = sideX(st.turn);
     if (a === b) {
       const usedN = 4 - st.remaining.length;
       return [0, 1, 2, 3].map((i) => ({ v: a, x: cx - 108 + i * 72, y: G.MID, used: i < usedN }));
@@ -389,9 +419,9 @@
         return;
       }
       const from = s.from !== undefined ? s.from : extraFrom;
-      const dir = from === LIGHT ? -1 : 1; // light throws upward from the bottom edge
+      const dir = atBottom(from) ? -1 : 1; // the bottom player throws upward
       const sx = s.x + (Math.random() * 140 - 70);
-      const sy = from === LIGHT ? G.BOTTOM + 30 : G.TOP - 30;
+      const sy = atBottom(from) ? G.BOTTOM + 30 : G.TOP - 30;
       const ox = s.x + (Math.random() * 30 - 15);
       const oy = s.y + dir * 34;
       jobs.push(el.animate([
@@ -422,23 +452,46 @@
     }
   }
 
+  // ---------- online ----------
+  const Net = window.TablaNet;
+  const online = {
+    role: null, // null: both players on this screen; 'host' or 'guest' online
+    seat: null, // which colour this screen plays online
+    id: null, // the host's peer id, which is also the invite
+    link: null,
+    myName: '',
+    peerName: '',
+    connected: false,
+    awaiting: false, // the guest asked the host for something and waits for the answer
+    note: '',
+  };
+  let awaitTimer = 0;
+  let remoteDrag = null; // the checker the other player is dragging right now
+  let remoteSel = null; // the checker the other player has picked up
+  let localDropped = null; // our checker, dropped on a target, waiting for the move to be played
+  let dragSentAt = 0;
+
+  const myTurn = () => !online.role || state.turn === online.seat;
+  const send = (msg) => online.link && online.link.send(msg);
+
   // ---------- interface updates ----------
-  const cards = [$('#card0'), $('#card1')];
-  let shownScore = [null, null];
+  const cardOf = (p) => (atBottom(p) ? $('#card0') : $('#card1'));
 
   function updateCards() {
     for (const p of [LIGHT, DARK]) {
-      const c = cards[p];
+      const c = cardOf(p);
       c.querySelector('.name').textContent = state.players[p].name;
-      c.querySelector('.pips').textContent = 'остават ' + E.pipCount(state.board, p);
+      const away = online.role && p !== online.seat && !online.connected;
+      c.querySelector('.pips').textContent = 'остават ' + E.pipCount(state.board, p) + (away ? ' · няма връзка' : '');
+      c.classList.toggle('away', !!away);
       c.querySelector('.offbar i').style.transform = `scaleX(${state.board.off[p] / E.CHECKERS})`;
       const b = c.querySelector('.score b');
-      if (shownScore[p] !== state.score[p]) {
+      if (b._p !== p || b._score !== state.score[p]) {
+        const grew = b._p === p && b._score !== undefined && state.score[p] > b._score;
         b.textContent = String(state.score[p]);
-        if (shownScore[p] !== null && state.score[p] > shownScore[p]) {
-          b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump');
-        }
-        shownScore[p] = state.score[p];
+        if (grew) { b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump'); }
+        b._p = p;
+        b._score = state.score[p];
       }
       const active = (state.phase === 'roll' || state.phase === 'move') && state.turn === p;
       c.classList.toggle('active', active);
@@ -447,13 +500,24 @@
   }
 
   function updateLabels() {
-    const view = state.phase === 'opening' ? LIGHT : state.turn;
-    for (let i = 0; i < 24; i++) document.getElementById('lbl' + i).textContent = E.pipOf(view, i);
+    const pv = online.role ? online.seat : state.phase === 'opening' ? LIGHT : state.turn;
+    for (let d = 0; d < 24; d++) document.getElementById('lbl' + d).textContent = E.pipOf(pv, disp(d));
   }
 
   const turnDone = () => state.phase === 'move' && (!state.remaining.length || !movesNow.length);
 
   function plural(n) { return n === 1 ? 'ход' : 'хода'; }
+
+  function movesThisTurn(st) {
+    if (st.phase !== 'move' || !st.dice.length) return 0;
+    return (st.dice[0] === st.dice[1] ? 4 : 2) - st.remaining.length;
+  }
+
+  function canUndo() {
+    if (busy || online.awaiting) return false;
+    if (!online.role) return history.length > 0;
+    return myTurn() && movesThisTurn(state) > 0;
+  }
 
   function updateControls() {
     const name = state.players[state.turn].name;
@@ -468,18 +532,28 @@
         status = state.openingRoll ? 'Равни зарове — хвърлете отново' : 'Всеки хвърля по един зар — по-високият започва';
         break;
       case 'roll':
-        label = 'Хвърли';
-        enabled = pulse = true;
-        status = `${name} е на ход`;
+        if (myTurn()) {
+          label = 'Хвърли';
+          enabled = pulse = true;
+          status = online.role ? 'Твой ред е' : `${name} е на ход`;
+        } else {
+          label = `Ред е на ${name}`;
+          status = `Чакаме ${name}…`;
+        }
         break;
       case 'move':
+        if (!myTurn()) {
+          status = `${name} играе…`;
+          break;
+        }
         enabled = turnDone();
         pulse = enabled;
-        if (!movesNow.length && state.remaining.length) status = `${name}: няма възможен ход`;
-        else if (!state.remaining.length) status = `${name}: натисни „Готово“`;
+        if (!movesNow.length && state.remaining.length) status = `${online.role ? 'Нямаш' : name + ': няма'} възможен ход`;
+        else if (!state.remaining.length) status = 'Натисни „Готово“';
         else {
           const r = state.remaining;
-          status = r.length > 2 ? `${name}: ${r.length} ${plural(r.length)} по ${r[0]}` : `${name} играе ${r.join(' и ')}`;
+          const who = online.role ? 'Играеш' : `${name} играе`;
+          status = r.length > 2 ? `${who} ${r.length} ${plural(r.length)} по ${r[0]}` : `${who} ${r.join(' и ')}`;
         }
         break;
       case 'gameover':
@@ -495,10 +569,14 @@
       span.textContent = label;
       span.classList.remove('swap'); void span.offsetWidth; span.classList.add('swap');
     }
-    btn.disabled = busy || !enabled;
+    btn.disabled = busy || online.awaiting || !enabled;
     btn.classList.toggle('pulse', pulse);
-    $('#undoBtn').disabled = busy || !history.length;
+    $('#undoBtn').disabled = !canUndo();
     $('#status').textContent = status;
+    const ns = $('#netStatus');
+    ns.hidden = !online.role;
+    ns.textContent = online.note;
+    ns.classList.toggle('ok', online.connected);
   }
 
   function updateHighlights() {
@@ -506,6 +584,11 @@
     document.querySelectorAll('.hl.on').forEach((el) => el.classList.remove('on', 'hover'));
     document.querySelectorAll('.spot').forEach((el) => el.remove());
     if (busy || state.phase !== 'move') return;
+    if (!myTurn()) {
+      const el = remoteSel !== null && topChecker(state.turn, remoteSel);
+      if (el) el.classList.add('selected');
+      return;
+    }
     for (const src of sources) {
       const el = topChecker(state.turn, src);
       if (el) el.classList.add(selected && selected.from === src ? 'selected' : 'movable');
@@ -536,9 +619,9 @@
 
   function updateRollHint() {
     const h = $('#rollHint');
-    const show = !busy && (state.phase === 'roll' || (state.phase === 'opening' && !state.openingRoll));
+    const show = !busy && ((state.phase === 'roll' && myTurn()) || (state.phase === 'opening' && !state.openingRoll));
     if (show) {
-      const x = state.phase === 'opening' ? (G.RIGHT_L + G.RIGHT_R) / 2 : G.SIDE_X[state.turn];
+      const x = state.phase === 'opening' ? (G.RIGHT_L + G.RIGHT_R) / 2 : sideX(state.turn);
       h.style.left = x + 'px';
       h.style.top = G.MID + 'px';
     }
@@ -548,7 +631,7 @@
   function refresh() {
     movesNow = E.currentMoves(state);
     sources = new Set(movesNow.map((m) => m.from));
-    if (selected && !sources.has(selected.from)) selected = null;
+    if (selected && (!sources.has(selected.from) || !myTurn())) selected = null;
     updateCards();
     updateLabels();
     updateControls();
@@ -567,7 +650,7 @@
       { opacity: 1, transform: 'translate(-50%, -50%) scale(1)', offset: 0.18 },
       { opacity: 1, transform: 'translate(-50%, -50%) scale(1)', offset: 0.8 },
       { opacity: 0, transform: 'translate(-50%, -50%) scale(1.04)' },
-    ], { duration: reduced.matches ? ms : ms, easing: EASE_OUT });
+    ], { duration: ms, easing: EASE_OUT });
   }
 
   let toastTimer = 0;
@@ -580,62 +663,236 @@
   }
 
   // ---------- actions ----------
-  function pushHistory() {
-    history.push(state);
+  // Every change to the game is an action: {k: 'opening' | 'roll' | 'move' |
+  // 'done' | 'undo' | 'next' | 'rematch' | 'restart' | 'start'}. The referee
+  // (this screen, or the host online) decides its outcome in commit(); both
+  // screens then show it with present(). Actions run one after another.
+
+  let chain = Promise.resolve();
+  function enqueue(fn) {
+    chain = chain.then(async () => {
+      busy = true;
+      selected = null;
+      refresh();
+      try { await fn(); } catch (e) { console.error(e); } finally { busy = false; refresh(); }
+    });
+    return chain;
+  }
+
+  function pushHistory(st) {
+    history.push(st);
     if (history.length > 600) history.shift();
   }
 
-  async function run(fn) {
-    if (busy) return;
-    busy = true;
-    selected = null;
-    refresh();
-    try { await fn(); } finally { busy = false; refresh(); }
+  /** Legal moves exactly as the engine would make them, or null. */
+  function checkedPath(st, path) {
+    if (!Array.isArray(path) || !path.length || path.length > 4) return null;
+    const out = [];
+    let s = st;
+    for (let i = 0; i < path.length; i++) {
+      if (s.phase !== 'move') return null;
+      const m = path[i] || {};
+      const legal = E.currentMoves(s).find((x) => x.from === m.from && x.to === m.to && x.die === m.die);
+      if (!legal) return null;
+      out.push(legal);
+      s = E.play(s, legal);
+    }
+    return out;
   }
 
-  function actRoll() {
-    if (state.phase === 'opening') return run(openingThrow);
-    if (state.phase !== 'roll') return;
-    return run(async () => {
-      pushHistory();
-      const key = `${state.gameNo}:${state.turnSeq}`;
-      const pair = rollLog[key] || (rollLog[key] = [randomDie(), randomDie()]);
-      state = E.roll(state, pair[0], pair[1]);
-      const layout = diceLayout(state);
-      const specs = layout.map((s, i) => ({ ...s, used: false, extra: i >= 2 }));
-      await throwDice(specs, state.turn);
-      syncDice();
-      afterRoll();
-    });
+  /** May the player in `seat` do this now? seat null: both share this screen. */
+  function allowed(a, seat) {
+    const st = state;
+    const own = seat === null || st.turn === seat;
+    switch (a && a.k) {
+      case 'opening': return st.phase === 'opening';
+      case 'roll': return own && st.phase === 'roll';
+      case 'move': return own && st.phase === 'move' && !!checkedPath(st, a.path);
+      case 'done': return own && st.phase === 'move' && (!st.remaining.length || !E.currentMoves(st).length);
+      // only the referee keeps the history; the guest just asks
+      case 'undo': return (online.role === 'guest' || history.length > 0) && (seat === null || (own && movesThisTurn(st) > 0));
+      case 'next': return st.phase === 'gameover';
+      case 'rematch': return st.phase === 'matchover';
+      case 'restart': return seat === null || seat === LIGHT;
+      default: return false;
+    }
   }
 
-  async function openingThrow() {
-    const key = `${state.gameNo}:0`;
-    const pair = rollLog[key] || [randomDie(), randomDie()];
-    const before = state;
-    state = E.openingRoll(state, pair[0], pair[1]);
-    await throwDice([
-      { v: pair[0], x: G.SIDE_X[LIGHT], y: G.MID, from: LIGHT },
-      { v: pair[1], x: G.SIDE_X[DARK], y: G.MID, from: DARK },
-    ]);
-    if (state.phase === 'opening') {
-      toast('Равни зарове — хвърлете отново');
+  /** The referee: settles the dice, records the step for undo and shows it. Runs inside the queue. */
+  function commit(a) {
+    const prev = state;
+    let next;
+    let act = { k: a.k };
+    switch (a.k) {
+      case 'opening': {
+        const key = `${prev.gameNo}:0`;
+        const dice = rollLog[key] || [randomDie(), randomDie()];
+        next = E.openingRoll(prev, dice[0], dice[1]);
+        if (next.phase !== 'opening') { rollLog[key] = dice; pushHistory(prev); }
+        act.dice = dice;
+        break;
+      }
+      case 'roll': {
+        const key = `${prev.gameNo}:${prev.turnSeq}`;
+        const dice = rollLog[key] || (rollLog[key] = [randomDie(), randomDie()]);
+        pushHistory(prev);
+        next = E.roll(prev, dice[0], dice[1]);
+        act.dice = dice;
+        break;
+      }
+      case 'move': {
+        const path = checkedPath(prev, a.path);
+        pushHistory(prev);
+        next = path.reduce((s, m) => E.play(s, m), prev);
+        act.path = path;
+        break;
+      }
+      case 'done':
+        pushHistory(prev);
+        next = E.endTurn(prev);
+        break;
+      case 'undo':
+        next = history.pop();
+        break;
+      case 'next':
+        next = E.nextGame(prev);
+        break;
+      case 'rematch':
+        next = E.newMatch(prev.players.map((p) => p.name), prev.matchTo);
+        break;
+      case 'restart':
+        next = { ...E.nextGame(prev), gameNo: prev.gameNo };
+        break;
+    }
+    if (a.k === 'next' || a.k === 'rematch' || a.k === 'restart') {
+      history = [];
+      rollLog = {};
+    }
+    if (online.role === 'host') send({ t: 'act', a: act, state: next });
+    return present(prev, act, next);
+  }
+
+  /** What the player on this screen asks for. */
+  function request(a) {
+    if (busy || online.awaiting) return;
+    if (online.role === 'guest') {
+      if (!online.connected) { toast('Няма връзка с приятеля'); return; }
+      if (!allowed(a, online.seat)) return;
+      send({ t: 'intent', a });
+      online.awaiting = true;
+      clearTimeout(awaitTimer);
+      awaitTimer = setTimeout(() => { online.awaiting = false; refresh(); }, 5000);
+      refresh();
       return;
     }
-    rollLog[key] = pair;
-    history.push(before);
-    await wait(350);
-    banner(`${state.players[state.turn].name} започва`);
-    await wait(900);
-    syncDice();
-    await wait(300);
-    afterRoll();
+    const seat = online.role === 'host' ? LIGHT : null;
+    enqueue(() => (allowed(a, seat) ? commit(a) : undefined));
+  }
+
+  /** The checker already in someone's hand for this move, so it flies on from there. */
+  function heldChecker(a) {
+    let el = null;
+    if (a.k === 'move') {
+      const top = topChecker(state.turn, a.path[0].from);
+      if (localDropped && localDropped === top) el = localDropped;
+      else if (remoteDrag && remoteDrag.el === top) el = remoteDrag.el;
+    }
+    if (remoteDrag && remoteDrag.el !== el) settleRemoteDrag();
+    localDropped = null;
+    remoteDrag = null;
+    remoteSel = null;
+    return el;
+  }
+
+  /** Shows an action on screen, from `prev` to `next`. */
+  async function present(prev, a, next) {
+    clearTimeout(autoTimer);
+    const held = heldChecker(a);
+    switch (a.k) {
+      case 'opening': {
+        state = next;
+        await throwDice([
+          { v: a.dice[0], x: sideX(LIGHT), y: G.MID, from: LIGHT },
+          { v: a.dice[1], x: sideX(DARK), y: G.MID, from: DARK },
+        ]);
+        if (next.phase === 'opening') {
+          toast('Равни зарове — хвърлете отново');
+          break;
+        }
+        await wait(350);
+        banner(`${next.players[next.turn].name} започва`);
+        await wait(900);
+        syncDice();
+        await wait(300);
+        afterRoll();
+        break;
+      }
+      case 'roll': {
+        state = next;
+        const specs = diceLayout(next).map((s, i) => ({ ...s, used: false, extra: i >= 2 }));
+        await throwDice(specs, next.turn);
+        syncDice();
+        afterRoll();
+        break;
+      }
+      case 'move': {
+        const mover = prev.turn;
+        let s = prev;
+        for (let k = 0; k < a.path.length; k++) {
+          const m = a.path[k];
+          s = E.play(s, m);
+          state = s;
+          syncDice();
+          if (m.hit) setTimeout(() => Sound.hit(), dur(330));
+          await reconcile(state.board, {
+            mover,
+            hitDelay: 330,
+            dragged: k === 0 ? held : null,
+            onLand: (el) => { if (el._p === mover) (m.to === OFF ? Sound.off() : Sound.checker()); },
+          });
+          updateCards();
+        }
+        state = next;
+        if (next.phase === 'gameover' || next.phase === 'matchover') {
+          await wait(400);
+          showOver(prev.score);
+          break;
+        }
+        movesNow = E.currentMoves(state);
+        if (!state.remaining.length || !movesNow.length) scheduleAutoDone(650);
+        break;
+      }
+      case 'done':
+        state = next;
+        Sound.tap();
+        syncDice();
+        refresh();
+        banner(online.role && next.turn === online.seat ? 'Твой ред е' : `Ред е на ${next.players[next.turn].name}`, 1100);
+        break;
+      case 'undo':
+        hideOverlay('#over');
+        state = next;
+        Sound.tap();
+        syncDice();
+        await reconcile(state.board);
+        break;
+      case 'start': case 'next': case 'rematch': case 'restart': {
+        hideOverlay('#over');
+        state = next;
+        syncDice();
+        refresh();
+        await reconcile(state.board, { stagger: 28 });
+        banner({ start: 'Започваме!', next: `Игра ${next.gameNo + 1}`, rematch: 'Реванш!', restart: 'Отначало' }[a.k]);
+        break;
+      }
+    }
+    state = next;
   }
 
   function afterRoll() {
     movesNow = E.currentMoves(state);
     if (!movesNow.length) {
-      toast('Няма възможен ход');
+      toast(myTurn() ? 'Няма възможен ход' : `${state.players[state.turn].name} няма възможен ход`);
       Sound.error();
       scheduleAutoDone(1500);
     }
@@ -644,105 +901,26 @@
   let autoTimer = 0;
   function scheduleAutoDone(ms) {
     clearTimeout(autoTimer);
-    if (!settings.autoDone) return;
+    if (!settings.autoDone || !myTurn()) return;
     const at = state;
-    autoTimer = setTimeout(() => { if (state === at && !busy) actDone(); }, ms);
-  }
-
-  function actMove(path, dragged = null) {
-    return run(async () => {
-      pushHistory();
-      const mover = state.turn;
-      for (let k = 0; k < path.length; k++) {
-        const m = path[k];
-        state = E.play(state, m);
-        syncDice();
-        if (m.hit) setTimeout(() => Sound.hit(), dur(330));
-        await reconcile(state.board, {
-          mover,
-          hitDelay: 330,
-          dragged: k === 0 ? dragged : null,
-          onLand: (el) => { if (el._p === mover) (m.to === OFF ? Sound.off() : Sound.checker()); },
-        });
-        updateCards();
-      }
-      if (state.phase === 'gameover' || state.phase === 'matchover') {
-        await wait(400);
-        showOver();
-        return;
-      }
-      movesNow = E.currentMoves(state);
-      if (!state.remaining.length || !movesNow.length) scheduleAutoDone(650);
-    });
-  }
-
-  function actDone() {
-    if (busy || !turnDone()) return;
-    clearTimeout(autoTimer);
-    pushHistory();
-    state = E.endTurn(state);
-    Sound.tap();
-    syncDice();
-    refresh();
-    banner(`Ред е на ${state.players[state.turn].name}`, 1100);
-  }
-
-  function actUndo() {
-    if (!history.length) return;
-    clearTimeout(autoTimer);
-    hideOverlay('#over');
-    return run(async () => {
-      state = history.pop();
-      Sound.tap();
-      syncDice();
-      await reconcile(state.board);
-    });
+    autoTimer = setTimeout(() => { if (state === at && !busy) request({ k: 'done' }); }, ms);
   }
 
   function actMain() {
-    if (state.phase === 'opening' || state.phase === 'roll') actRoll();
-    else if (state.phase === 'move') actDone();
-    else if (state.phase === 'gameover') nextGame();
-    else if (state.phase === 'matchover') rematch();
-  }
-
-  function nextGame() {
-    hideOverlay('#over');
-    state = E.nextGame(state);
-    freshGameView(`Игра ${state.gameNo + 1}`);
-  }
-
-  function rematch() {
-    hideOverlay('#over');
-    state = E.newMatch(state.players.map((p) => p.name), state.matchTo);
-    freshGameView('Реванш!');
-  }
-
-  function freshGameView(text) {
-    history = [];
-    rollLog = {};
-    selected = null;
-    return run(async () => {
-      syncDice();
-      await reconcile(state.board, { stagger: 28 });
-      banner(text);
-    });
-  }
-
-  function restartGame() {
-    const gameNo = state.gameNo;
-    state = { ...E.nextGame(state), gameNo };
-    freshGameView('Отначало');
+    const k = { opening: 'opening', roll: 'roll', move: 'done', gameover: 'next', matchover: 'rematch' }[state.phase];
+    if (k) request({ k });
   }
 
   // ---------- game over ----------
-  function showOver() {
+  function showOver(prev) {
     const r = state.result;
-    const before = history[history.length - 1];
-    const prev = before ? before.score : state.score;
     const name = state.players[r.winner].name;
     const matchOver = state.phase === 'matchover';
-    $('#overTitle').textContent = matchOver ? `${name} печели мача!` : `${name} печели!`;
+    const iWon = online.role && r.winner === online.seat;
+    const iLost = online.role && r.winner !== online.seat;
+    $('#overTitle').textContent = iWon ? (matchOver ? 'Печелиш мача!' : 'Печелиш!')
+      : iLost ? (matchOver ? `${name} печели мача` : `${name} печели`)
+        : matchOver ? `${name} печели мача!` : `${name} печели!`;
     $('#overKind').textContent = { single: 'Победа · +1', gammon: 'Марс! · +2', backgammon: 'Бекгамон! · +3' }[r.kind];
     for (const p of [LIGHT, DARK]) {
       $('#overName' + p).textContent = state.players[p].name;
@@ -750,10 +928,11 @@
     }
     $('#overTarget').textContent = state.matchTo ? `Мач до ${state.matchTo}` : 'Свободна игра';
     $('#overNext').textContent = matchOver ? 'Реванш' : 'Следваща игра';
-    $('#overNew').hidden = !matchOver;
+    $('#overNew').hidden = !matchOver || online.role === 'guest';
+    $('#overUndo').hidden = !!online.role;
     showOverlay('#over');
-    Sound.win(matchOver);
-    confetti(matchOver ? 260 : 110);
+    Sound.win(matchOver && !iLost);
+    if (!iLost) confetti(matchOver ? 260 : 110);
     setTimeout(() => {
       const b = $('#overScore' + r.winner);
       b.textContent = String(state.score[r.winner]);
@@ -803,7 +982,7 @@
     const o = $(sel);
     o.classList.add('show');
     $('#app').setAttribute('aria-hidden', 'true');
-    const f = o.querySelector('.btn.primary, input, .btn');
+    const f = o.querySelector('.btn.primary:not([hidden]), input:not([readonly]), .btn:not([hidden])');
     if (f) setTimeout(() => f.focus({ preventScroll: true }), 50);
   }
   function hideOverlay(sel) {
@@ -821,23 +1000,25 @@
   function select(from) {
     selected = { from, dests: E.destinations(state.board, state.turn, state.remaining, from) };
     Sound.tap();
+    send({ t: 'sel', from });
     updateHighlights();
   }
 
   function clearSelection() {
     if (!selected) return;
     selected = null;
+    send({ t: 'sel', from: null });
     updateHighlights();
   }
 
   function onPointerDown(e) {
-    if (busy || anyOverlay() || e.button > 0) return;
+    if (busy || online.awaiting || anyOverlay() || e.button > 0) return;
     const { x, y } = toBoard(e);
-    if (state.phase === 'roll' || state.phase === 'opening') { actRoll(); return; }
-    if (state.phase !== 'move') return;
+    if (state.phase === 'opening' || (state.phase === 'roll' && myTurn())) { actMain(); return; }
+    if (state.phase !== 'move' || !myTurn()) return;
     const loc = locAt(x, y);
     if (selected && loc !== null && selected.dests.has(String(loc))) {
-      actMove(selected.dests.get(String(loc)));
+      request({ k: 'move', path: selected.dests.get(String(loc)) });
       return;
     }
     if (loc !== null && sources.has(loc)) {
@@ -864,6 +1045,11 @@
       drag.el.style.zIndex = '800';
     }
     place(drag.el, { x, y });
+    const now = performance.now();
+    if (online.role && now - dragSentAt > 40) {
+      dragSentAt = now;
+      send({ t: 'drag', from: drag.loc, x: Math.round(x), y: Math.round(y) });
+    }
     const loc = locAt(x, y);
     const h = loc !== null && selected && selected.dests.has(String(loc)) ? hlFor(loc) : null;
     if (h !== drag.hover) {
@@ -890,18 +1076,23 @@
     const { x, y } = toBoard(e);
     const loc = locAt(x, y);
     if (selected && loc !== null && selected.dests.has(String(loc))) {
-      actMove(selected.dests.get(String(loc)), d.el);
+      localDropped = d.el;
+      request({ k: 'move', path: selected.dests.get(String(loc)) });
       return;
     }
     // dropped somewhere illegal: back home
-    const arr = stacks[state.turn].get(keyOf(d.loc));
-    const pos = slot(state.turn, keyOf(d.loc), arr.length - 1, arr.length);
-    flyTo(d.el, pos, { fromDrag: true });
+    send({ t: 'drop' });
+    flyTo(d.el, restingPlace(state.turn, d.loc), { fromDrag: true });
     if (loc !== d.loc) Sound.error();
   }
 
+  function restingPlace(p, loc) {
+    const arr = stacks[p].get(keyOf(loc));
+    return slot(p, keyOf(loc), arr.indexOf(topChecker(p, loc)), arr.length);
+  }
+
   function onDoubleClick(e) {
-    if (busy || state.phase !== 'move') return;
+    if (busy || online.awaiting || state.phase !== 'move' || !myTurn()) return;
     const { x, y } = toBoard(e);
     const loc = locAt(x, y);
     if (loc === null || !sources.has(loc)) return;
@@ -911,7 +1102,28 @@
       if (path.length !== 1) continue;
       if (!best || path[0].die > best[0].die) best = path;
     }
-    if (best) actMove(best);
+    if (best) request({ k: 'move', path: best });
+  }
+
+  // The other player's hand, seen from this side of the table (mirrored).
+  function onRemoteDrag(msg) {
+    if (busy || state.phase !== 'move' || myTurn()) return;
+    const el = topChecker(state.turn, msg.from);
+    if (!el) return;
+    if (remoteDrag && remoteDrag.el !== el) settleRemoteDrag();
+    remoteDrag = { el, from: msg.from };
+    el.classList.add('dragging', 'lifted');
+    el.style.zIndex = '800';
+    el.getAnimations().forEach((a) => a.cancel());
+    place(el, { x: msg.x, y: G.H - msg.y });
+  }
+
+  function settleRemoteDrag() {
+    if (!remoteDrag) return;
+    const { el, from } = remoteDrag;
+    remoteDrag = null;
+    if (stacks[el._p].get(keyOf(from)).includes(el)) flyTo(el, restingPlace(el._p, from), { fromDrag: true });
+    else el.classList.remove('dragging', 'lifted');
   }
 
   // ---------- keyboard ----------
@@ -924,7 +1136,7 @@
       return;
     }
     if (anyOverlay()) return;
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); actUndo(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); request({ k: 'undo' }); return; }
     if (e.key === ' ' || e.key === 'Enter') {
       if (document.activeElement && document.activeElement.tagName === 'BUTTON') return;
       e.preventDefault();
@@ -943,47 +1155,227 @@
   }
 
   // ---------- saving ----------
-  function save() {
-    if (!started) return;
+  const GUEST_STORE = 'tabla.guest';
+  const SETTINGS_STORE = 'tabla.settings';
+
+  function store(key, value) {
     try {
-      localStorage.setItem(STORE, JSON.stringify({ state, history: history.slice(-200), rollLog, settings, matchLength }));
+      if (value === null) localStorage.removeItem(key);
+      else localStorage.setItem(key, JSON.stringify(value));
     } catch (_) { /* private mode or file:// without storage: the game still works */ }
   }
 
-  function load() {
+  function readStore(key) {
     try {
-      const raw = localStorage.getItem(STORE);
+      const raw = localStorage.getItem(key);
       return raw ? JSON.parse(raw) : null;
     } catch (_) {
       return null;
     }
   }
 
-  // ---------- setup ----------
-  function startMatch(names, length) {
-    state = E.newMatch(names, length);
-    started = true;
-    shownScore = [null, null];
-    hideOverlay('#setup');
-    freshGameView('Започваме!');
-  }
-
-  function resume(saved) {
-    state = saved.state;
-    history = saved.history || [];
-    rollLog = saved.rollLog || {};
-    started = true;
-    shownScore = [null, null];
-    hideOverlay('#setup');
-    run(async () => {
-      syncDice();
-      await reconcile(state.board, { stagger: 20 });
-    }).then(() => {
-      if (state.phase === 'gameover' || state.phase === 'matchover') showOver();
+  /** The host keeps the game (it is the referee); the guest keeps only how to get back in. */
+  function save() {
+    if (!started || online.role === 'guest') return;
+    store(STORE, {
+      state, history: history.slice(-200), rollLog, matchLength,
+      online: online.role === 'host' ? { id: online.id, myName: online.myName, peerName: online.peerName } : null,
     });
   }
 
-  function bindSetup(saved) {
+  // ---------- online: host ----------
+  function netStatusText(s, detail) {
+    const friend = online.peerName || 'приятеля';
+    if (s === 'error') return 'Този браузър не може да играе онлайн';
+    if (online.role === 'host') {
+      if (s === 'starting') return 'Свързване…';
+      if (s === 'waiting') return started ? `Чакаме ${friend} да се върне…` : 'Чакаме приятеля да отвори линка…';
+      if (s === 'connected') return `Онлайн с ${friend}`;
+      if (detail === 'server') return 'Няма интернет — опитвам пак…';
+      return `${online.peerName || 'Приятелят'} се разкачи — чакаме го…`;
+    }
+    if (s === 'connecting') return 'Свързване…';
+    if (s === 'connected') return `Онлайн с ${friend}`;
+    if (detail === 'host-missing') return 'Играта не е отворена при домакина — опитвам пак…';
+    if (detail === 'server') return 'Няма интернет — опитвам пак…';
+    return 'Връзката прекъсна — свързвам се пак…';
+  }
+
+  function onNetStatus(s, detail) {
+    online.connected = s === 'connected';
+    online.note = netStatusText(s, detail);
+    $('#lobbyStatus').textContent = online.note;
+    $('#lobby').classList.toggle('failed', s === 'error');
+    if (state) { updateCards(); updateControls(); }
+  }
+
+  function hostOnline(id, restored) {
+    online.role = 'host';
+    online.seat = LIGHT;
+    online.id = id;
+    online.link = Net.host(id, { onMessage: onNetMessage, onStatus: onNetStatus });
+    if (!restored) showLobby('host');
+  }
+
+  function sendSync(fresh) {
+    send({ t: 'sync', state, fresh: !!fresh, hostName: online.myName });
+  }
+
+  function onNetMessage(msg) {
+    if (!msg || typeof msg !== 'object') return;
+    switch (msg.t) {
+      case 'open':
+        if (online.role === 'guest') send({ t: 'hello', name: online.myName, v: 1 });
+        break;
+      case 'hello':
+        if (online.role !== 'host') break;
+        online.peerName = String(msg.name || 'Приятел').slice(0, 16);
+        if (!started) {
+          startMatch([online.myName, online.peerName], matchLength);
+          enqueue(() => sendSync(true));
+        } else {
+          if (state.players[DARK].name !== online.peerName) {
+            state = { ...state, players: [state.players[LIGHT], { name: online.peerName }] };
+          }
+          enqueue(() => sendSync(false));
+        }
+        toast(`${online.peerName} е тук`);
+        onNetStatus('connected');
+        break;
+      case 'sync':
+        if (online.role === 'guest') applySync(msg);
+        break;
+      case 'intent':
+        if (online.role !== 'host') break;
+        enqueue(() => (allowed(msg.a, DARK) ? commit(msg.a) : sendSync(false)));
+        break;
+      case 'act':
+        if (online.role !== 'guest') break;
+        online.awaiting = false;
+        clearTimeout(awaitTimer);
+        enqueue(() => present(state, msg.a, msg.state));
+        break;
+      case 'drag':
+        onRemoteDrag(msg);
+        break;
+      case 'drop':
+        settleRemoteDrag();
+        break;
+      case 'sel':
+        remoteSel = msg.from;
+        if (!busy) updateHighlights();
+        break;
+      case 'bye':
+        online.connected = false;
+        online.note = `${online.peerName || 'Приятелят'} излезе от играта`;
+        toast(online.note, 3000);
+        if (state) { updateCards(); updateControls(); }
+        break;
+    }
+  }
+
+  // ---------- online: guest ----------
+  function joinOnline(hostId, name) {
+    online.role = 'guest';
+    online.seat = DARK;
+    online.id = hostId;
+    online.myName = name;
+    store(GUEST_STORE, { hostId, name });
+    state = { ...state, players: [{ name: '…' }, { name }] };
+    setView(DARK);
+    showLobby('guest');
+    online.link = Net.join(hostId, { onMessage: onNetMessage, onStatus: onNetStatus });
+  }
+
+  function applySync(msg) {
+    online.awaiting = false;
+    online.peerName = String(msg.hostName || msg.state.players[LIGHT].name);
+    online.note = `Онлайн с ${online.peerName}`;
+    hideOverlay('#lobby');
+    hideOverlay('#setup');
+    enqueue(async () => {
+      if (msg.fresh) {
+        await present(state, { k: 'start' }, msg.state);
+        return;
+      }
+      hideOverlay('#over');
+      state = msg.state;
+      syncDice();
+      await reconcile(state.board);
+      if (state.phase === 'gameover' || state.phase === 'matchover') showOver(state.score);
+    });
+  }
+
+  function showLobby(role) {
+    const host = role === 'host';
+    $('#lobbyTitle').textContent = host ? 'Покани приятел' : 'Влизаш в играта';
+    $('#lobbyText').textContent = host
+      ? 'Прати му този линк. Щом го отвори, играта започва. Ти играеш със светлите.'
+      : 'Свързваме те с приятеля ти. Ти играеш с тъмните.';
+    $('#invite').hidden = !host;
+    $('#shareBtn').hidden = !host || !navigator.share;
+    if (host) $('#inviteLink').value = Net.inviteLink(online.id);
+    hideOverlay('#setup');
+    showOverlay('#lobby');
+  }
+
+  function leaveOnline() {
+    if (online.link) online.link.close();
+    const wasGuest = online.role === 'guest';
+    Object.assign(online, { role: null, seat: null, id: null, link: null, peerName: '', connected: false, awaiting: false, note: '' });
+    if (wasGuest) {
+      store(GUEST_STORE, null);
+      started = false;
+    }
+    if (location.hash) clearHash();
+    setView(LIGHT);
+    $('#joinNote').hidden = true;
+    document.querySelectorAll('.host-only').forEach((el) => { el.hidden = false; });
+  }
+  function clearHash() {
+    try { window.history.replaceState(null, '', location.pathname + location.search); } catch (_) { /* file:// */ }
+  }
+
+  // ---------- setup ----------
+  function startMatch(names, length) {
+    const prev = state;
+    state = E.newMatch(names, length);
+    history = [];
+    rollLog = {};
+    started = true;
+    hideOverlay('#setup');
+    hideOverlay('#lobby');
+    const next = state;
+    state = prev;
+    enqueue(() => present(prev, { k: 'start' }, next));
+  }
+
+  function resume(saved) {
+    history = saved.history || [];
+    rollLog = saved.rollLog || {};
+    started = true;
+    hideOverlay('#setup');
+    if (saved.online) {
+      online.myName = saved.online.myName;
+      online.peerName = saved.online.peerName || '';
+      hostOnline(saved.online.id, true);
+    }
+    enqueue(async () => {
+      state = saved.state;
+      syncDice();
+      await reconcile(state.board, { stagger: 20 });
+      if (state.phase === 'gameover' || state.phase === 'matchover') showOver(state.score);
+    });
+  }
+
+  function names() {
+    const n0 = $('#name0').value.trim() || $('#name0').placeholder;
+    let n1 = $('#name1').value.trim() || $('#name1').placeholder;
+    if (n1 === n0) n1 += ' 2';
+    return [n0, n1];
+  }
+
+  function bindSetup(saved, joinId) {
     const chips = document.querySelectorAll('#lengthChips button');
     const pick = (v) => {
       matchLength = v;
@@ -993,19 +1385,57 @@
     pick(saved && saved.matchLength !== undefined ? saved.matchLength : 5);
     if (saved && saved.state) {
       $('#name0').value = saved.state.players[0].name;
-      $('#name1').value = saved.state.players[1].name;
-      if (saved.state.phase !== 'matchover') {
+      if (!saved.online) $('#name1').value = saved.state.players[1].name;
+      if (saved.state.phase !== 'matchover' && !joinId) {
         $('#resumeBtn').hidden = false;
+        $('#resumeBtn').textContent = saved.online ? `Продължи онлайн играта с ${saved.online.peerName || 'приятел'}` : 'Продължи играта';
         $('#resumeBtn').addEventListener('click', () => resume(saved), { once: true });
       }
     }
+    if (joinId) {
+      // opened from a friend's invite
+      $('#setupForm').classList.add('joining');
+      $('#joinNote').hidden = false;
+      document.querySelectorAll('.host-only').forEach((el) => { el.hidden = true; });
+      const g = readStore(GUEST_STORE);
+      $('#name1').value = g && g.name ? g.name : '';
+      $('#startBtn').textContent = 'Влез в играта';
+      $('#name1').closest('.field').querySelector('.lbl').textContent = 'Твоето име';
+    }
     $('#setupForm').addEventListener('submit', (e) => {
       e.preventDefault();
-      const n0 = $('#name0').value.trim() || $('#name0').placeholder;
-      let n1 = $('#name1').value.trim() || $('#name1').placeholder;
-      if (n1 === n0) n1 += ' 2';
       $('#resumeBtn').hidden = true;
+      const [n0, n1] = names();
+      if ($('#setupForm').classList.contains('joining')) {
+        $('#setupForm').classList.remove('joining');
+        joinOnline(joinId, n1);
+        return;
+      }
       startMatch([n0, n1], matchLength);
+    });
+    $('#hostBtn').addEventListener('click', () => {
+      $('#resumeBtn').hidden = true;
+      online.myName = names()[0];
+      online.peerName = '';
+      started = false;
+      hostOnline(Net.newId(), false);
+    });
+  }
+
+  function bindLobby() {
+    $('#copyBtn').addEventListener('click', async () => {
+      const input = $('#inviteLink');
+      try { await navigator.clipboard.writeText(input.value); } catch (_) { input.select(); document.execCommand('copy'); }
+      $('#copyBtn').textContent = 'Копирано ✓';
+      setTimeout(() => { $('#copyBtn').textContent = 'Копирай'; }, 1600);
+    });
+    $('#shareBtn').addEventListener('click', () => {
+      navigator.share({ title: 'Табла', text: 'Ела да играем табла!', url: $('#inviteLink').value }).catch(() => {});
+    });
+    $('#lobbyCancel').addEventListener('click', () => {
+      leaveOnline();
+      hideOverlay('#lobby');
+      showOverlay('#setup');
     });
   }
 
@@ -1013,14 +1443,17 @@
     $('#menuBtn').addEventListener('click', () => {
       if (busy) return;
       document.querySelectorAll('#menu .armed').forEach((b) => { b.classList.remove('armed'); b.textContent = b.dataset.label; });
+      $('#leaveBtn').hidden = !online.role;
+      document.querySelectorAll('#menu [data-act="restart"]').forEach((b) => { b.hidden = online.role === 'guest'; });
+      document.querySelectorAll('#menu [data-act="newmatch"]').forEach((b) => { b.hidden = !!online.role; });
       showOverlay('#menu');
     });
     const sound = $('#optSound');
     const auto = $('#optAuto');
     sound.checked = settings.sound;
     auto.checked = settings.autoDone;
-    sound.addEventListener('change', () => { settings.sound = Sound.enabled = sound.checked; Sound.tap(); save(); });
-    auto.addEventListener('change', () => { settings.autoDone = auto.checked; save(); if (turnDone()) scheduleAutoDone(400); });
+    sound.addEventListener('change', () => { settings.sound = Sound.enabled = sound.checked; Sound.tap(); store(SETTINGS_STORE, settings); });
+    auto.addEventListener('change', () => { settings.autoDone = auto.checked; store(SETTINGS_STORE, settings); if (turnDone()) scheduleAutoDone(400); });
     document.querySelectorAll('[data-act]').forEach((b) => {
       if (b.dataset.confirm) b.dataset.label = b.textContent;
       b.addEventListener('click', () => {
@@ -1033,13 +1466,16 @@
         if (b.dataset.confirm) { b.classList.remove('armed'); b.textContent = b.dataset.label; }
         if (act === 'close') { hideOverlay('#' + b.closest('.overlay').id); }
         else if (act === 'rules') { hideOverlay('#menu'); showOverlay('#rules'); }
-        else if (act === 'restart') { hideOverlay('#menu'); restartGame(); }
-        else if (act === 'newmatch') {
+        else if (act === 'restart') { hideOverlay('#menu'); request({ k: 'restart' }); }
+        else if (act === 'newmatch' || act === 'leave') {
           hideOverlay('#menu'); hideOverlay('#over');
+          if (online.role) leaveOnline();
+          started = false;
+          store(STORE, null);
           $('#resumeBtn').hidden = true;
           showOverlay('#setup');
         }
-        else if (act === 'undo') actUndo();
+        else if (act === 'undo') request({ k: 'undo' });
         else if (act === 'next') actMain();
       });
     });
@@ -1056,16 +1492,21 @@
     buildHighlights();
     buildCheckers();
     buildDice();
-    const saved = load();
-    if (saved && saved.settings) settings = { ...settings, ...saved.settings };
+    const saved = readStore(STORE);
+    const oldSettings = saved && saved.settings; // saved inside the game before version 2
+    settings = { ...settings, ...(oldSettings || {}), ...(readStore(SETTINGS_STORE) || {}) };
     Sound.enabled = settings.sound;
     state = E.newMatch(['Играч 1', 'Играч 2'], 5);
     state = { ...state, board: { points: new Array(24).fill(0), bar: [0, 0], off: [15, 15] } };
     reconcile(state.board, { animate: false });
     fit();
     new ResizeObserver(fit).observe($('#boardWrap'));
+    const joinId = Net.joinIdFromUrl();
+    if (joinId && saved && saved.online && saved.online.id === joinId) clearHash(); // the host opened their own invite
+    const inviteFromFriend = joinId && !(saved && saved.online && saved.online.id === joinId) ? joinId : null;
     refresh();
-    bindSetup(saved);
+    bindSetup(saved, inviteFromFriend);
+    bindLobby();
     bindMenu();
     const board = $('#board');
     board.addEventListener('pointerdown', onPointerDown);
@@ -1074,11 +1515,21 @@
     board.addEventListener('pointercancel', onPointerUp);
     board.addEventListener('dblclick', onDoubleClick);
     $('#mainBtn').addEventListener('click', actMain);
-    $('#undoBtn').addEventListener('click', actUndo);
+    $('#undoBtn').addEventListener('click', () => request({ k: 'undo' }));
     document.addEventListener('keydown', onKey);
-    setTimeout(() => $('#name0').focus({ preventScroll: true }), 300);
+    // back in the same game after a reload: go straight in
+    const g = readStore(GUEST_STORE);
+    if (inviteFromFriend && g && g.hostId === inviteFromFriend && g.name) {
+      hideOverlay('#setup');
+      joinOnline(inviteFromFriend, g.name);
+    } else {
+      setTimeout(() => $(inviteFromFriend ? '#name1' : '#name0').focus({ preventScroll: true }), 300);
+    }
     // for automated checks only
-    window.__tabla = { get state() { return state; }, get busy() { return busy; }, actMove, actRoll, actDone, actUndo, E };
+    window.__tabla = {
+      get state() { return state; }, get busy() { return busy; }, get online() { return online; },
+      request, E,
+    };
   }
 
   boot();

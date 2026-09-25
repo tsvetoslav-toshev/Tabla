@@ -25,7 +25,7 @@ const idle = (page) => page.waitForFunction(() => !window.__tabla.busy);
 async function play(page, turns) {
   await page.fill('#name0', 'Иван');
   await page.fill('#name1', 'Мария');
-  await page.click('#setupForm button[type=submit]');
+  await page.click('#startBtn');
   await page.waitForTimeout(1600);
   await idle(page);
   for (let t = 0; t < turns; t++) {
@@ -36,7 +36,7 @@ async function play(page, turns) {
       const moves = await page.evaluate(() => window.__tabla.E.currentMoves(window.__tabla.state));
       const phase = await page.evaluate(() => window.__tabla.state.phase);
       if (phase !== 'move' || !moves.length) break;
-      await page.evaluate((m) => window.__tabla.actMove([m]), moves[0]);
+      await page.evaluate((m) => window.__tabla.request({ k: 'move', path: [m] }), moves[0]);
       await page.waitForTimeout(100);
       await idle(page);
     }
