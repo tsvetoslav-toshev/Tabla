@@ -51,6 +51,8 @@ body {
 }
 button { font: inherit; color: inherit; }
 [hidden] { display: none !important; }
+/* iPhone: a text field under user-select:none cannot be typed into without this */
+input, textarea { -webkit-user-select: text; user-select: text; }
 svg { display: block; }
 
 /* ---------- layout ---------- */
@@ -81,6 +83,10 @@ svg { display: block; }
   }
   #card1 { align-self: start; }
   #card0 { align-self: end; }
+  /* the side column is narrow: the main button gets a row of its own */
+  .controls .buttons { flex-wrap: wrap; }
+  #mainBtn { flex: 1 1 100%; order: -1; }
+  #undoBtn { flex: 1; }
 }
 
 
@@ -162,7 +168,8 @@ svg { display: block; }
 .btn.big { height: 54px; font-size: 1.05rem; width: 100%; }
 .btn.danger.armed { background: rgba(224, 116, 90, 0.2); border-color: var(--danger); color: #ffd6cb; }
 .btn.link { background: none; height: auto; padding: 6px; color: var(--text-dim); font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
-#mainBtn span { display: inline-block; white-space: nowrap; }
+#mainBtn { min-width: 0; }
+#mainBtn span { display: inline-block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 #mainBtn span.swap { animation: swapIn var(--t-med) var(--ease-out); }
 
 /* ---------- checkers ---------- */
@@ -434,6 +441,71 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
 .pulse-ring span { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--gold); opacity: 0; animation: ripple 2.4s ease-out infinite; }
 .pulse-ring span + span { animation-delay: 1.2s; }
 
+/* ---------- names in the lobby ---------- */
+.lobby-name { text-align: left; margin-bottom: 8px; }
+.name-first { margin: 0 0 10px; font-size: 0.85rem; color: var(--gold-hi); }
+.invite { transition: opacity var(--t-med) var(--ease-out), filter var(--t-med) var(--ease-out); }
+.invite.locked { opacity: 0.35; filter: blur(1.5px); pointer-events: none; }
+.rename .row { display: flex; gap: 10px; margin-top: 8px; }
+.rename .row .btn { flex: 1; }
+
+/* ---------- reactions and chat ---------- */
+.social { display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; }
+.emoji-bar { display: flex; gap: 4px; }
+.emo {
+  width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--line); cursor: pointer;
+  background: rgba(255, 255, 255, 0.05); font-size: 1.3rem; line-height: 1; display: grid; place-items: center;
+  transition: transform var(--t-fast) var(--ease-spring), background var(--t-fast) var(--ease-out), opacity var(--t-med) var(--ease-out);
+}
+.emo:hover:not(:disabled) { transform: translateY(-2px) scale(1.08); background: rgba(255, 255, 255, 0.1); }
+.emo:active:not(:disabled) { transform: scale(0.9); }
+.emo:disabled { opacity: 0.35; cursor: default; }
+.emo:focus-visible, .chat-btn:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 2px; }
+.chat-btn { height: 40px; padding: 0 12px; position: relative; }
+.chat-btn .badge {
+  position: absolute; top: -6px; right: -6px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
+  background: var(--danger); color: #fff; font: 700 0.72rem/20px var(--font-ui); text-align: center;
+  animation: bump var(--t-slow) var(--ease-spring);
+}
+.flying-emoji {
+  position: fixed; z-index: 70; pointer-events: none; font-size: 44px; line-height: 1;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5));
+}
+.bubble {
+  position: fixed; z-index: 65; max-width: min(280px, calc(100vw - 32px)); padding: 9px 14px; border-radius: 16px;
+  background: linear-gradient(180deg, #3a2b20, #281d16); border: 1px solid rgba(231, 184, 92, 0.45);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); font-size: 0.95rem; cursor: pointer; overflow-wrap: anywhere;
+}
+.bubble.from-bottom { translate: 0 -100%; border-bottom-left-radius: 4px; }
+.bubble.from-top { border-top-left-radius: 4px; }
+.chat {
+  position: fixed; z-index: 40; right: 12px; top: 12px; bottom: 12px; width: min(340px, calc(100vw - 24px));
+  display: flex; flex-direction: column; border-radius: 20px;
+  background: linear-gradient(180deg, rgba(44, 33, 25, 0.97), rgba(27, 20, 15, 0.97));
+  border: 1px solid rgba(231, 184, 92, 0.25); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  transform: translateX(calc(100% + 24px)); visibility: hidden;
+  transition: transform var(--t-slow) var(--ease-out), visibility 0s linear var(--t-slow);
+}
+.chat.open { transform: none; visibility: visible; transition: transform var(--t-slow) var(--ease-out); }
+.chat header { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 8px 18px; }
+.chat h2 { margin: 0; font: 1.25rem var(--font-display); }
+.chat-list { flex: 1; overflow-y: auto; padding: 6px 14px; display: flex; flex-direction: column; gap: 6px; user-select: text; -webkit-user-select: text; }
+.chat-empty { margin: auto; color: var(--text-dim); font-size: 0.9rem; }
+.msg { max-width: 82%; padding: 8px 12px; border-radius: 14px; font-size: 0.95rem; overflow-wrap: anywhere; animation: msgIn var(--t-med) var(--ease-out); }
+.msg.mine { align-self: flex-end; background: linear-gradient(180deg, var(--gold-hi), var(--gold)); color: #2a1a0e; border-bottom-right-radius: 4px; }
+.msg.theirs { align-self: flex-start; background: rgba(255, 255, 255, 0.08); border-bottom-left-radius: 4px; }
+.chat-form { display: flex; gap: 8px; padding: 10px 12px 12px; border-top: 1px solid var(--line); }
+.chat-form input {
+  flex: 1; min-width: 0; height: 44px; padding: 0 14px; border-radius: 12px; color: var(--text);
+  background: rgba(0, 0, 0, 0.3); border: 1px solid var(--line); font: 1rem var(--font-ui);
+}
+.chat-form input:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(231, 184, 92, 0.2); }
+@media (max-aspect-ratio: 5/4) {
+  /* phones held upright: a sheet from the bottom */
+  .chat { left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; height: min(62dvh, 460px); transform: translateY(calc(100% + 24px)); }
+}
+@keyframes msgIn { from { opacity: 0; transform: translateY(6px); } }
+
 /* small landscape screens (phones on their side) */
 @media (min-aspect-ratio: 5/4) and (max-height: 520px) {
   #app { padding: 10px; gap: 8px 12px; grid-template-columns: 180px minmax(0, 1fr); }
@@ -446,7 +518,15 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
   .btn { height: 40px; padding: 0 10px; }
   .btn.icon { width: 40px; }
   #undoBtn span { display: none; }
+  .controls .buttons { flex-wrap: wrap; }
+  #mainBtn { flex: 1 1 100%; order: -1; font-size: 0.88rem; letter-spacing: 0; padding: 0 6px; }
+  #undoBtn { flex: 1; }
   .controls .match { display: none; }
+  .social { gap: 4px; flex-wrap: nowrap; }
+  .emoji-bar { gap: 3px; }
+  .emo { width: 32px; height: 32px; font-size: 1.05rem; border-radius: 10px; }
+  .chat-btn { height: 32px; width: 36px; padding: 0; }
+  .chat-btn span { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
@@ -497,8 +577,28 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       <button class="btn ghost icon" id="menuBtn" title="Меню" aria-label="Меню"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
     </div>
     <div class="status" id="status" role="status" aria-live="polite"></div>
+    <div class="social" id="social" hidden>
+      <div class="emoji-bar" id="emojiBar" role="group" aria-label="Реакции"></div>
+      <button class="btn ghost chat-btn" id="chatBtn" type="button" aria-expanded="false" aria-controls="chat">
+        <svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg><span>Чат</span><b class="badge" id="chatBadge" hidden>0</b>
+      </button>
+    </div>
   </nav>
 </div>
+
+<!-- chat: slides in beside the board, the game stays playable -->
+<aside class="chat" id="chat" aria-hidden="true" aria-labelledby="chatTitle">
+  <header>
+    <h2 id="chatTitle">Чат</h2>
+    <button class="btn ghost icon" id="chatClose" type="button" aria-label="Затвори чата"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </header>
+  <div class="chat-list" id="chatList" role="log" aria-live="polite"></div>
+  <form class="chat-form" id="chatForm" autocomplete="off">
+    <input id="chatInput" maxlength="200" placeholder="Съобщение…" aria-label="Съобщение" enterkeyhint="send">
+    <button class="btn primary icon" type="submit" aria-label="Изпрати"><svg viewBox="0 0 24 24"><path d="M4 12h15M13 6l6 6-6 6"/></svg></button>
+  </form>
+</aside>
+
 
 <!-- start screen -->
 <div class="overlay show" id="setup" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
@@ -537,7 +637,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
         <svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/></svg>
         Покани приятел онлайн
       </button>
-      <p class="hint host-only">Онлайн: първото име е твоето, а приятелят пише своето, когато отвори линка.</p>
+
     </form>
   </div>
 </div>
@@ -548,6 +648,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     <h2>Меню</h2>
     <button class="btn ghost wide" data-act="close">Обратно към играта</button>
     <button class="btn ghost wide" data-act="rules">Правила и управление</button>
+    <button class="btn ghost wide" data-act="rename">Смени името</button>
     <label class="toggle"><input type="checkbox" id="optSound"><span class="sw"></span>Звук</label>
     <label class="toggle"><input type="checkbox" id="optAuto"><span class="sw"></span>Край на хода без „Готово“</label>
     <button class="btn ghost wide danger" data-act="restart" data-confirm="Натисни пак, за да започнеш играта отначало">Играта отначало</button>
@@ -576,6 +677,9 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       <h3>Онлайн</h3>
       <p>„Покани приятел онлайн“ дава линк. Прати го на приятеля си — щом го отвори и напише името си, играта започва и двамата виждате всеки ход, хвърляне и хванат пул в момента. Всеки вижда своите пулове долу. Онлайн „Назад“ връща само твоите ходове, докато не си натиснал „Готово“.</p>
       <p>Ако връзката прекъсне или някой презареди страницата, играта продължава от същото място, щом се свържете отново.</p>
+      <p><b>Чат и реакции.</b> Под бутоните има 👍 😂 😮 😤 — излитат над дъската и при двамата. „Чат“ отваря разговора; ново съобщение изскача до името на приятеля.</p>
+      <p><b>Честни зарове.</b> Онлайн всяко хвърляне се прави от двата браузъра заедно: никой от двамата не може да нагласи числата, а браузърът на госта проверява всяко хвърляне.</p>
+      <p><b>Само за двама.</b> Първият, който отвори линка, заема мястото. Ако линкът стигне до някой друг, той вижда „Играта е заета“ и не може да влезе.</p>
     </div>
     <button class="btn primary wide" data-act="close">Разбрах</button>
   </div>
@@ -609,6 +713,12 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     <div class="pulse-ring" aria-hidden="true"><span></span><span></span><i></i></div>
     <h2 id="lobbyTitle">Покани приятел</h2>
     <p class="sub" id="lobbyText"></p>
+    <label class="field lobby-name" id="hostNameField">
+      <span class="token light" aria-hidden="true"></span>
+      <span class="lbl">Твоето име</span>
+      <input id="hostName" maxlength="16" placeholder="Напиши името си" spellcheck="false" autocomplete="nickname">
+    </label>
+    <p class="name-first" id="nameFirst">Първо напиши името си — после прати линка.</p>
     <div class="invite" id="invite">
       <input id="inviteLink" readonly aria-label="Линк за поканата">
       <button class="btn primary" id="copyBtn" type="button">Копирай</button>
@@ -616,6 +726,29 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     <button class="btn ghost wide" id="shareBtn" type="button" hidden>Изпрати…</button>
     <p class="wait" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span id="lobbyStatus">Свързване…</span></p>
     <button class="btn link" id="lobbyCancel" type="button">Отказ</button>
+  </div>
+</div>
+
+<!-- names -->
+<div class="overlay" id="rename" role="dialog" aria-modal="true" aria-labelledby="renameTitle">
+  <div class="panel rename">
+    <h2 id="renameTitle">Имена</h2>
+    <form id="renameForm" autocomplete="off">
+      <label class="field" id="renameRow0">
+        <span class="token light" aria-hidden="true"></span>
+        <span class="lbl">Светли пулове</span>
+        <input id="renameInput0" maxlength="16" spellcheck="false">
+      </label>
+      <label class="field" id="renameRow1">
+        <span class="token dark" aria-hidden="true"></span>
+        <span class="lbl">Тъмни пулове</span>
+        <input id="renameInput1" maxlength="16" spellcheck="false">
+      </label>
+      <div class="row">
+        <button class="btn ghost" type="button" data-act="close">Отказ</button>
+        <button class="btn primary" type="submit">Запази</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -915,6 +1048,119 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
   };
 });
 
+/*
+ * Fair dice online: both browsers take part in every throw, so neither can
+ * choose the numbers.
+ *
+ *   1. The host picks a secret seed and sends only its fingerprint (SHA-256).
+ *   2. The guest answers with a seed of its own, in the open.
+ *   3. At the throw the host reveals its seed; the dice come from both seeds.
+ *
+ * The host cannot change its seed after seeing the guest's (the fingerprint
+ * would not match), and the guest does not know the host's seed when it picks
+ * its own. The guest's screen checks both before showing the dice.
+ */
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.TablaFair = api;
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  const K = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  ];
+
+  function utf8(str) {
+    return typeof TextEncoder !== 'undefined'
+      ? new TextEncoder().encode(str)
+      : Uint8Array.from(unescape(encodeURIComponent(str)), (c) => c.charCodeAt(0));
+  }
+
+  /** SHA-256 of a string, as 32 bytes. Small and synchronous, so it works from file:// too. */
+  function sha256(str) {
+    const msg = utf8(str);
+    const len = msg.length;
+    const total = ((len + 9 + 63) >> 6) << 6;
+    const buf = new Uint8Array(total);
+    buf.set(msg);
+    buf[len] = 0x80;
+    const bits = len * 8;
+    const dv = new DataView(buf.buffer);
+    dv.setUint32(total - 8, Math.floor(bits / 0x100000000));
+    dv.setUint32(total - 4, bits >>> 0);
+    const h = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    const w = new Uint32Array(64);
+    const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+    for (let off = 0; off < total; off += 64) {
+      for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4);
+      for (let i = 16; i < 64; i++) {
+        const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+        const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+        w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+      }
+      let [a, b, c, d, e, f, g, hh] = h;
+      for (let i = 0; i < 64; i++) {
+        const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+        const ch = (e & f) ^ (~e & g);
+        const t1 = (hh + S1 + ch + K[i] + w[i]) >>> 0;
+        const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+        const maj = (a & b) ^ (a & c) ^ (b & c);
+        const t2 = (S0 + maj) >>> 0;
+        hh = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+      }
+      h[0] = (h[0] + a) >>> 0; h[1] = (h[1] + b) >>> 0; h[2] = (h[2] + c) >>> 0; h[3] = (h[3] + d) >>> 0;
+      h[4] = (h[4] + e) >>> 0; h[5] = (h[5] + f) >>> 0; h[6] = (h[6] + g) >>> 0; h[7] = (h[7] + hh) >>> 0;
+    }
+    const out = new Uint8Array(32);
+    const odv = new DataView(out.buffer);
+    h.forEach((v, i) => odv.setUint32(i * 4, v));
+    return out;
+  }
+
+  const hex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+  /** The fingerprint the host sends before the throw. */
+  const fingerprint = (seed) => hex(sha256('tabla-seed|' + seed));
+
+  /** Two dice from both seeds; every number equally likely (no modulo bias). */
+  function diceFrom(hostSeed, guestSeed) {
+    let bytes = sha256('tabla-dice|' + hostSeed + '|' + guestSeed);
+    const dice = [];
+    for (;;) {
+      for (const b of bytes) {
+        if (b < 252) dice.push((b % 6) + 1); // 252 = 6 * 42
+        if (dice.length === 2) return dice;
+      }
+      bytes = sha256(hex(bytes));
+    }
+  }
+
+  function newSeed(randomBytes) {
+    const a = new Uint8Array(16);
+    randomBytes(a);
+    return hex(a);
+  }
+
+  /** What the guest checks before it believes a throw. */
+  function verify({ commit, hostSeed, guestSeed, dice, myGuestSeed }) {
+    if (typeof hostSeed !== 'string' || typeof guestSeed !== 'string') return false;
+    if (fingerprint(hostSeed) !== commit) return false;
+    if (myGuestSeed && myGuestSeed !== guestSeed) return false;
+    const d = diceFrom(hostSeed, guestSeed);
+    return Array.isArray(dice) && d[0] === dice[0] && d[1] === dice[1];
+  }
+
+  return { sha256, hex, fingerprint, diceFrom, newSeed, verify };
+});
+
 /* Every sound is synthesised on the spot — no audio files, nothing to download. */
 (function (root) {
   'use strict';
@@ -1005,6 +1251,16 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       const c = ac(); if (!c) return;
       tone(c, c.currentTime, 660, 0.05, 0.06, 'sine');
     },
+    message() {
+      const c = ac(); if (!c) return;
+      const t = c.currentTime;
+      tone(c, t, 880, 0.06, 0.12, 'sine');
+      tone(c, t + 0.09, 1320, 0.05, 0.16, 'sine');
+    },
+    pop() {
+      const c = ac(); if (!c) return;
+      tone(c, c.currentTime, 420, 0.1, 0.14, 'sine', 900);
+    },
     error() {
       const c = ac(); if (!c) return;
       const t = c.currentTime;
@@ -1054,17 +1310,24 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     return 'tabla-' + Array.from(a, (b) => (b % 36).toString(36)).join('');
   }
 
+  /** What one side accepts from the other: small messages, not too many of them. */
+  const MAX_MESSAGE = 16000;
+  const BURST = 80; // messages per 2 s — a drag sends ~25 a second
+
   /**
    * One side of the connection. Callbacks: onMessage(msg), onStatus(status, detail)
    * with status one of: 'starting', 'waiting', 'connecting', 'connected', 'lost', 'error'.
+   * The host also gets admit(hello): only a newcomer it admits can take part —
+   * anyone else holding the link is turned away without disturbing the game.
    */
-  function Link(role, { id, hostId, onMessage, onStatus }) {
+  function Link(role, { id, hostId, onMessage, onStatus, admit }) {
     let peer = null;
-    let conn = null;
+    let conn = null; // the connection in play
     let closed = false;
     let lastSeen = 0;
     let retryTimer = 0;
     let status = '';
+    let bucket = { start: 0, n: 0 };
     const setStatus = (s, detail) => {
       if (s === status && !detail) return;
       status = s;
@@ -1080,22 +1343,48 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       }
     }, PING_MS);
 
-    function attach(c) {
+    function acceptable(msg) {
+      if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return false;
+      const now = Date.now();
+      if (now - bucket.start > 2000) bucket = { start: now, n: 0 };
+      if (++bucket.n > BURST) return false;
+      // the host's full game state is the only big message, and only the host sends it
+      return role === 'guest' || JSON.stringify(msg).length <= MAX_MESSAGE;
+    }
+
+    function adopt(c) {
       if (conn && conn !== c) { try { conn.close(); } catch (_) { /* already gone */ } }
       conn = c;
+      lastSeen = Date.now();
+      setStatus('connected');
+    }
+
+    function watch(c) {
       c.on('open', () => {
-        lastSeen = Date.now();
-        setStatus('connected');
+        if (role !== 'guest') return;
+        adopt(c);
         onMessage({ t: 'open' });
       });
       c.on('data', (msg) => {
+        if (!acceptable(msg)) return;
+        if (c !== conn) {
+          if (role !== 'host' || msg.t !== 'hello') return;
+          if (admit(msg)) {
+            adopt(c);
+            onMessage(msg);
+          } else {
+            try { c.send({ t: 'busy' }); } catch (_) { /* gone already */ }
+            setTimeout(() => { try { c.close(); } catch (_) { /* gone */ } }, 500);
+          }
+          return;
+        }
         lastSeen = Date.now();
         if (status !== 'connected') setStatus('connected');
-        if (msg && msg.t === 'ping') return;
+        if (msg.t === 'ping') return;
         onMessage(msg);
       });
       c.on('close', () => {
-        if (conn !== c || closed) return;
+        if (c !== conn || closed) return;
         setStatus('lost');
         if (role === 'guest') reconnect();
       });
@@ -1109,7 +1398,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
         if (!peer || peer.destroyed) { start(); return; }
         if (peer.disconnected) { peer.reconnect(); return; }
         setStatus('connecting');
-        attach(peer.connect(hostId, { reliable: true, serialization: 'json' }));
+        watch(peer.connect(hostId, { reliable: true, serialization: 'json' }));
       }, RETRY_MS);
     }
 
@@ -1117,10 +1406,10 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       setStatus(role === 'host' ? 'starting' : 'connecting');
       peer = role === 'host' ? new root.Peer(id, peerOptions()) : new root.Peer(peerOptions());
       peer.on('open', () => {
-        if (role === 'host') setStatus('waiting');
-        else attach(peer.connect(hostId, { reliable: true, serialization: 'json' }));
+        if (role === 'host') setStatus(conn && conn.open ? 'connected' : 'waiting');
+        else watch(peer.connect(hostId, { reliable: true, serialization: 'json' }));
       });
-      peer.on('connection', (c) => { if (role === 'host') attach(c); });
+      peer.on('connection', (c) => { if (role === 'host') watch(c); });
       peer.on('disconnected', () => { if (!closed) setTimeout(() => !closed && !peer.destroyed && peer.reconnect(), RETRY_MS); });
       peer.on('error', (e) => {
         if (closed) return;
@@ -1169,6 +1458,8 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
 
   root.TablaNet = {
     newId,
+    /** A secret only this guest's browser knows: it proves the seat is theirs when they come back. */
+    newToken: () => newId().slice(6) + newId().slice(6),
     host: (id, handlers) => Link('host', { id, ...handlers }),
     join: (hostId, handlers) => Link('guest', { hostId, ...handlers }),
     /** A downloaded copy (file://) has no address a friend could open: invite them to the website. */
@@ -1646,6 +1937,10 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     connected: false,
     awaiting: false, // the guest asked the host for something and waits for the answer
     note: '',
+    left: false, // the other player pressed "Напусни", rather than just losing the connection
+    busy: false, // the guest was turned away: someone else holds the seat
+    guestToken: '', // the guest's secret; the host keeps the one it let in
+    fairWarnings: 0,
   };
   let awaitTimer = 0;
   let remoteDrag = null; // the checker the other player is dragging right now
@@ -1819,6 +2114,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     updateControls();
     updateHighlights();
     updateRollHint();
+    updateSocial();
     save();
   }
 
@@ -1896,30 +2192,54 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       case 'next': return st.phase === 'gameover';
       case 'rematch': return st.phase === 'matchover';
       case 'restart': return seat === null || seat === LIGHT;
+      case 'rename': return typeof a.name === 'string' && (a.seat === LIGHT || a.seat === DARK) && (seat === null || a.seat === seat);
       default: return false;
     }
   }
 
+  /**
+   * The numbers for a throw. Online both browsers take part (fair.js); on one
+   * screen this browser rolls. A throw already made for this turn is reused,
+   * so undo never re-rolls. null: the friend's half is missing (no connection).
+   */
+  async function diceFor(key) {
+    if (rollLog[key]) return { dice: rollLog[key] };
+    if (online.role === 'host') return fairThrow();
+    return { dice: [randomDie(), randomDie()] };
+  }
+
+  const cleanName = (x, fallback) => String(x == null ? '' : x).replace(/\s+/g, ' ').trim().slice(0, 16) || fallback;
+
   /** The referee: settles the dice, records the step for undo and shows it. Runs inside the queue. */
-  function commit(a) {
+  async function commit(a) {
     const prev = state;
     let next;
     let act = { k: a.k };
     switch (a.k) {
-      case 'opening': {
-        const key = `${prev.gameNo}:0`;
-        const dice = rollLog[key] || [randomDie(), randomDie()];
-        next = E.openingRoll(prev, dice[0], dice[1]);
-        if (next.phase !== 'opening') { rollLog[key] = dice; pushHistory(prev); }
+      case 'opening': case 'roll': {
+        const key = a.k === 'opening' ? `${prev.gameNo}:0` : `${prev.gameNo}:${prev.turnSeq}`;
+        const thrown = await diceFor(key);
+        if (!thrown) {
+          toast(`Няма връзка с ${online.peerName || 'приятеля'} — хвърли пак, щом се свърже`, 2600);
+          return undefined;
+        }
+        const dice = thrown.dice;
+        if (a.k === 'opening') {
+          next = E.openingRoll(prev, dice[0], dice[1]);
+          if (next.phase !== 'opening') { rollLog[key] = dice; pushHistory(prev); }
+        } else {
+          rollLog[key] = dice;
+          pushHistory(prev);
+          next = E.roll(prev, dice[0], dice[1]);
+        }
         act.dice = dice;
+        if (thrown.fair) act.fair = thrown.fair;
         break;
       }
-      case 'roll': {
-        const key = `${prev.gameNo}:${prev.turnSeq}`;
-        const dice = rollLog[key] || (rollLog[key] = [randomDie(), randomDie()]);
-        pushHistory(prev);
-        next = E.roll(prev, dice[0], dice[1]);
-        act.dice = dice;
+      case 'rename': {
+        const name = cleanName(a.name, prev.players[a.seat].name);
+        next = { ...prev, players: prev.players.map((p, i) => (i === a.seat ? { name } : p)) };
+        act = { k: 'rename', seat: a.seat, name };
         break;
       }
       case 'move': {
@@ -1934,7 +2254,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
         next = E.endTurn(prev);
         break;
       case 'undo':
-        next = history.pop();
+        next = { ...history.pop(), players: prev.players }; // a new name survives undo
         break;
       case 'next':
         next = E.nextGame(prev);
@@ -1967,6 +2287,10 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       refresh();
       return;
     }
+    if (online.role === 'host' && !online.connected && (a.k === 'roll' || a.k === 'opening')) {
+      toast(`Чакаме ${online.peerName || 'приятеля'} да се свърже — заровете се хвърлят от двамата`, 2600);
+      return;
+    }
     const seat = online.role === 'host' ? LIGHT : null;
     enqueue(() => (allowed(a, seat) ? commit(a) : undefined));
   }
@@ -1989,6 +2313,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
   /** Shows an action on screen, from `prev` to `next`. */
   async function present(prev, a, next) {
     clearTimeout(autoTimer);
+    if ((a.k === 'roll' || a.k === 'opening') && online.role === 'guest') checkFair(a);
     const held = heldChecker(a);
     switch (a.k) {
       case 'opening': {
@@ -2050,6 +2375,15 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
         syncDice();
         refresh();
         banner(online.role && next.turn === online.seat ? 'Твой ред е' : `Ред е на ${next.players[next.turn].name}`, 1100);
+        break;
+      case 'rename':
+        state = next;
+        if (online.role === 'guest' && a.seat === online.seat) {
+          online.myName = a.name;
+          store(GUEST_STORE, { ...(readStore(GUEST_STORE) || {}), name: a.name });
+        }
+        if (online.role === 'host' && a.seat === online.seat) online.myName = a.name;
+        if (online.role && a.seat !== online.seat) online.peerName = a.name;
         break;
       case 'undo':
         hideOverlay('#over');
@@ -2312,7 +2646,8 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
   function onKey(e) {
     if (e.target && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') return;
     if (e.key === 'Escape') {
-      if ($('#rules').classList.contains('show')) hideOverlay('#rules');
+      if ($('#rename').classList.contains('show')) hideOverlay('#rename');
+      else if ($('#rules').classList.contains('show')) hideOverlay('#rules');
       else if ($('#menu').classList.contains('show')) hideOverlay('#menu');
       else clearSelection();
       return;
@@ -2361,20 +2696,24 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     if (!started || online.role === 'guest') return;
     store(STORE, {
       state, history: history.slice(-200), rollLog, matchLength,
-      online: online.role === 'host' ? { id: online.id, myName: online.myName, peerName: online.peerName } : null,
+      online: online.role === 'host'
+        ? { id: online.id, myName: online.myName, peerName: online.peerName, guestToken: online.guestToken, chat: chatLog }
+        : null,
     });
   }
 
   // ---------- online: host ----------
   function netStatusText(s, detail) {
     const friend = online.peerName || 'приятеля';
+    if (online.busy) return 'Тази игра е заета — някой друг вече е влязъл с този линк';
     if (s === 'error') return 'Този браузър не може да играе онлайн';
+    if (online.left && s !== 'connected') return `${online.peerName || 'Приятелят'} излезе от играта`;
     if (online.role === 'host') {
       if (s === 'starting') return 'Свързване…';
       if (s === 'waiting') return started ? `Чакаме ${friend} да се върне…` : 'Чакаме приятеля да отвори линка…';
       if (s === 'connected') return `Онлайн с ${friend}`;
       if (detail === 'server') return 'Няма интернет — опитвам пак…';
-      return `${online.peerName || 'Приятелят'} се разкачи — чакаме го…`;
+      return `${online.peerName || 'Приятелят'} се разкачи — изчакай да се върне…`;
     }
     if (s === 'connecting') return 'Свързване…';
     if (s === 'connected') return `Онлайн с ${friend}`;
@@ -2387,31 +2726,286 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     online.connected = s === 'connected';
     online.note = netStatusText(s, detail);
     $('#lobbyStatus').textContent = online.note;
-    $('#lobby').classList.toggle('failed', s === 'error');
-    if (state) { updateCards(); updateControls(); }
+    $('#lobby').classList.toggle('failed', s === 'error' || online.busy);
+    if (state) { updateCards(); updateControls(); updateSocial(); }
   }
 
   function hostOnline(id, restored) {
     online.role = 'host';
     online.seat = LIGHT;
     online.id = id;
-    online.link = Net.host(id, { onMessage: onNetMessage, onStatus: onNetStatus });
+    online.link = Net.host(id, { onMessage: onNetMessage, onStatus: onNetStatus, admit });
     if (!restored) showLobby('host');
   }
 
+  /**
+   * Who may sit in the guest's seat: the first browser to arrive, and after
+   * that only that browser again (it proves it with its secret token).
+   * Anyone else holding the link is turned away.
+   */
+  function admit(hello) {
+    const token = typeof hello.token === 'string' ? hello.token.slice(0, 64) : '';
+    if (!token) return false;
+    if (!online.guestToken) {
+      online.guestToken = token;
+      save();
+      return true;
+    }
+    return token === online.guestToken;
+  }
+
   function sendSync(fresh) {
-    send({ t: 'sync', state, fresh: !!fresh, hostName: online.myName });
+    send({ t: 'sync', state, fresh: !!fresh, hostName: online.myName, chat: chatLog });
+  }
+
+  // ---------- online: fair dice ----------
+  const Fair = window.TablaFair;
+  const randomBytes = (a) => crypto.getRandomValues(a);
+  const fair = { k: 0, hostSeed: '', commit: '', guestSeed: '' }; // the host's side
+  const fairGuest = { commits: {}, mySeeds: {} }; // the guest's side
+
+  /** The host locks in its half of the next throw and shows the guest only its fingerprint. */
+  function newCommit() {
+    fair.k += 1;
+    fair.hostSeed = Fair.newSeed(randomBytes);
+    fair.commit = Fair.fingerprint(fair.hostSeed);
+    fair.guestSeed = '';
+    send({ t: 'commit', k: fair.k, commit: fair.commit });
+  }
+
+  /** Both halves together: the throw. Waits for the guest's half; null if it never comes. */
+  async function fairThrow() {
+    if (!fair.commit) newCommit();
+    const until = Date.now() + 15000;
+    let resent = Date.now();
+    while (!fair.guestSeed) {
+      if (!online.connected || Date.now() > until) return null;
+      if (Date.now() - resent > 2000) {
+        send({ t: 'commit', k: fair.k, commit: fair.commit });
+        resent = Date.now();
+      }
+      await new Promise((r) => setTimeout(r, 60));
+    }
+    const proof = { k: fair.k, hostSeed: fair.hostSeed, guestSeed: fair.guestSeed };
+    const dice = Fair.diceFrom(proof.hostSeed, proof.guestSeed);
+    newCommit();
+    return { dice, fair: proof };
+  }
+
+  /** The guest checks every throw before believing it. */
+  function checkFair(a) {
+    const f = a.fair || {};
+    const ok = Fair.verify({
+      commit: fairGuest.commits[f.k],
+      hostSeed: f.hostSeed,
+      guestSeed: f.guestSeed,
+      dice: a.dice,
+      myGuestSeed: fairGuest.mySeeds[f.k],
+    });
+    if (!ok) {
+      online.fairWarnings += 1;
+      toast('⚠ Това хвърляне не мина проверката за честни зарове', 5000);
+    }
+  }
+
+  function onCommit(msg) {
+    const k = Number(msg.k);
+    if (!Number.isInteger(k) || typeof msg.commit !== 'string') return;
+    fairGuest.commits[k] = msg.commit.slice(0, 64);
+    const seed = fairGuest.mySeeds[k] || (fairGuest.mySeeds[k] = Fair.newSeed(randomBytes));
+    for (const old of Object.keys(fairGuest.commits)) {
+      if (+old < k - 8) { delete fairGuest.commits[old]; delete fairGuest.mySeeds[old]; }
+    }
+    send({ t: 'seed', k, seed });
+  }
+
+  function onSeed(msg) {
+    if (Number(msg.k) !== fair.k || fair.guestSeed || typeof msg.seed !== 'string') return;
+    fair.guestSeed = msg.seed.slice(0, 64);
+  }
+
+  // ---------- online: chat and reactions ----------
+  const EMOJI = ['👍', '😂', '😮', '😤'];
+  const CHAT_MAX = 200;
+  let chatLog = []; // [{id, from, text}], newest last; the host's copy is the one that is kept
+  let unread = 0;
+  const lastHeard = { chat: 0, emo: 0 };
+  const lastSaid = { chat: 0, emo: 0 };
+  /** Too many in a row from the other side are simply dropped. */
+  function tooSoon(kind, gap) {
+    const now = Date.now();
+    if (now - lastHeard[kind] < gap) return true;
+    lastHeard[kind] = now;
+    return false;
+  }
+
+  function addChat(entry) {
+    if (chatLog.some((m) => m.id === entry.id)) return;
+    chatLog.push(entry);
+    if (chatLog.length > 60) chatLog = chatLog.slice(-60);
+    renderChat();
+    if (online.role === 'host') save();
+  }
+
+  function renderChat() {
+    const list = $('#chatList');
+    list.textContent = '';
+    if (!chatLog.length) {
+      const p = document.createElement('p');
+      p.className = 'chat-empty';
+      p.textContent = 'Още няма съобщения. Кажи здрасти!';
+      list.appendChild(p);
+    }
+    for (const m of chatLog) {
+      const row = document.createElement('div');
+      row.className = 'msg ' + (m.from === online.seat ? 'mine' : 'theirs');
+      row.textContent = m.text; // text only: nothing a friend types can run as code here
+      list.appendChild(row);
+    }
+    list.scrollTop = list.scrollHeight;
+  }
+
+  const chatOpen = () => $('#chat').classList.contains('open');
+
+  function setChatOpen(open) {
+    $('#chat').classList.toggle('open', open);
+    $('#chat').setAttribute('aria-hidden', open ? 'false' : 'true');
+    $('#chatBtn').setAttribute('aria-expanded', String(open));
+    if (open) {
+      unread = 0;
+      renderChat();
+      setTimeout(() => $('#chatInput').focus({ preventScroll: true }), 60);
+    }
+    updateSocial();
+  }
+
+  function updateSocial() {
+    const on = !!online.role && started;
+    $('#social').hidden = !on;
+    if (!on && chatOpen()) setChatOpen(false);
+    const badge = $('#chatBadge');
+    badge.hidden = !unread;
+    badge.textContent = String(unread);
+    $('#chatTitle').textContent = online.peerName ? `Чат с ${online.peerName}` : 'Чат';
+    document.querySelectorAll('#social .emo').forEach((b) => { b.disabled = !online.connected; });
+  }
+
+  function sendChat(text) {
+    const clean = String(text).replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX);
+    if (!clean || !online.connected) return false;
+    const now = Date.now();
+    if (now - lastSaid.chat < 600) return false;
+    lastSaid.chat = now;
+    const entry = { id: Net.newId().slice(6), from: online.seat, text: clean };
+    send({ t: 'chat', id: entry.id, text: clean });
+    addChat(entry);
+    Sound.tap();
+    return true;
+  }
+
+  function onChat(msg) {
+    if (tooSoon('chat', 400)) return;
+    const text = typeof msg.text === 'string' ? msg.text.replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX) : '';
+    const id = typeof msg.id === 'string' ? msg.id.slice(0, 24) : '';
+    if (!text || !id) return;
+    addChat({ id, from: 1 - online.seat, text });
+    Sound.message();
+    if (!chatOpen()) {
+      unread += 1;
+      updateSocial();
+      bubble(1 - online.seat, text);
+    }
+  }
+
+  /** A speech bubble by the player's card, for a moment. */
+  function bubble(p, text) {
+    const r = cardOf(p).getBoundingClientRect();
+    const b = document.createElement('div');
+    b.className = 'bubble ' + (atBottom(p) ? 'from-bottom' : 'from-top');
+    b.textContent = text;
+    b.style.left = Math.min(innerWidth - 16, Math.max(16, r.left + 24)) + 'px';
+    b.style.top = (atBottom(p) ? r.top - 8 : r.bottom + 8) + 'px';
+    document.body.appendChild(b);
+    b.addEventListener('click', () => setChatOpen(true));
+    b.animate([
+      { opacity: 0, transform: `translateY(${atBottom(p) ? 10 : -10}px) scale(0.9)` },
+      { opacity: 1, transform: 'none', offset: 0.06 },
+      { opacity: 1, transform: 'none', offset: 0.9 },
+      { opacity: 0, transform: 'scale(0.96)' },
+    ], { duration: reduced.matches ? 4000 : 4200, easing: EASE_OUT }).finished.then(() => b.remove(), () => b.remove());
+  }
+
+  function sendEmoji(e) {
+    if (!EMOJI.includes(e) || !online.connected) return;
+    const now = Date.now();
+    if (now - lastSaid.emo < 450) return;
+    lastSaid.emo = now;
+    send({ t: 'emo', e });
+    flyEmoji(online.seat, e);
+  }
+
+  function onEmoji(msg) {
+    if (!EMOJI.includes(msg.e) || tooSoon('emo', 300)) return;
+    flyEmoji(1 - online.seat, msg.e);
+  }
+
+  /** The reaction rises from the sender's card over the board. */
+  function flyEmoji(p, e) {
+    const card = cardOf(p).getBoundingClientRect();
+    const board = $('#boardBox').getBoundingClientRect();
+    const el = document.createElement('div');
+    el.className = 'flying-emoji';
+    el.textContent = e;
+    const x0 = card.left + card.width / 2;
+    const y0 = card.top + card.height / 2;
+    const x1 = board.left + board.width * (0.35 + Math.random() * 0.3);
+    const y1 = board.top + board.height * (atBottom(p) ? 0.35 : 0.65);
+    el.style.left = x0 + 'px';
+    el.style.top = y0 + 'px';
+    document.body.appendChild(el);
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const spin = Math.random() < 0.5 ? -18 : 18;
+    Sound.pop();
+    el.animate([
+      { transform: 'translate(-50%, -50%) scale(0.3)', opacity: 0 },
+      { transform: `translate(calc(-50% + ${dx * 0.45}px), calc(-50% + ${dy * 0.45}px)) scale(1.9) rotate(${spin}deg)`, opacity: 1, offset: 0.35 },
+      { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(1.5) rotate(${-spin / 2}deg)`, opacity: 1, offset: 0.75 },
+      { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy - 40}px)) scale(1.3)`, opacity: 0 },
+    ], { duration: reduced.matches ? 1200 : 1700, easing: EASE_OUT }).finished.then(() => el.remove(), () => el.remove());
+  }
+
+  function bindSocial() {
+    const bar = $('#emojiBar');
+    for (const e of EMOJI) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'emo';
+      b.textContent = e;
+      b.setAttribute('aria-label', 'Реакция ' + e);
+      b.addEventListener('click', () => sendEmoji(e));
+      bar.appendChild(b);
+    }
+    $('#chatBtn').addEventListener('click', () => setChatOpen(!chatOpen()));
+    $('#chatClose').addEventListener('click', () => setChatOpen(false));
+    $('#chatForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = $('#chatInput');
+      if (sendChat(input.value)) input.value = '';
+    });
+    $('#chatInput').addEventListener('keydown', (e) => { if (e.key === 'Escape') setChatOpen(false); });
   }
 
   function onNetMessage(msg) {
     if (!msg || typeof msg !== 'object') return;
     switch (msg.t) {
       case 'open':
-        if (online.role === 'guest') send({ t: 'hello', name: online.myName, v: 1 });
+        if (online.role === 'guest') send({ t: 'hello', name: online.myName, token: online.guestToken, v: 2 });
         break;
       case 'hello':
         if (online.role !== 'host') break;
-        online.peerName = String(msg.name || 'Приятел').slice(0, 16);
+        online.peerName = cleanName(msg.name, 'Приятел');
+        online.left = false;
         if (!started) {
           startMatch([online.myName, online.peerName], matchLength);
           enqueue(() => sendSync(true));
@@ -2421,8 +3015,17 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
           }
           enqueue(() => sendSync(false));
         }
+        // a fresh lock for the next throw, now that the guest is (back) here
+        enqueue(() => newCommit());
         toast(`${online.peerName} е тук`);
         onNetStatus('connected');
+        break;
+      case 'busy':
+        if (online.role !== 'guest') break;
+        online.busy = true;
+        online.link.close();
+        onNetStatus('error');
+        showOverlay('#lobby');
         break;
       case 'sync':
         if (online.role === 'guest') applySync(msg);
@@ -2437,8 +3040,20 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
         clearTimeout(awaitTimer);
         enqueue(() => present(state, msg.a, msg.state));
         break;
+      case 'commit':
+        if (online.role === 'guest') onCommit(msg);
+        break;
+      case 'seed':
+        if (online.role === 'host') onSeed(msg);
+        break;
+      case 'chat':
+        onChat(msg);
+        break;
+      case 'emo':
+        onEmoji(msg);
+        break;
       case 'drag':
-        onRemoteDrag(msg);
+        if (typeof msg.x === 'number' && typeof msg.y === 'number') onRemoteDrag(msg);
         break;
       case 'drop':
         settleRemoteDrag();
@@ -2449,9 +3064,10 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
         break;
       case 'bye':
         online.connected = false;
+        online.left = true;
         online.note = `${online.peerName || 'Приятелят'} излезе от играта`;
         toast(online.note, 3000);
-        if (state) { updateCards(); updateControls(); }
+        if (state) { updateCards(); updateControls(); updateSocial(); }
         break;
     }
   }
@@ -2462,7 +3078,10 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     online.seat = DARK;
     online.id = hostId;
     online.myName = name;
-    store(GUEST_STORE, { hostId, name });
+    online.busy = false;
+    const g = readStore(GUEST_STORE);
+    online.guestToken = g && g.hostId === hostId && g.token ? g.token : Net.newToken();
+    store(GUEST_STORE, { hostId, name, token: online.guestToken });
     state = { ...state, players: [{ name: '…' }, { name }] };
     setView(DARK);
     showLobby('guest');
@@ -2471,10 +3090,18 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
 
   function applySync(msg) {
     online.awaiting = false;
-    online.peerName = String(msg.hostName || msg.state.players[LIGHT].name);
+    online.left = false;
+    online.peerName = cleanName(msg.hostName || msg.state.players[LIGHT].name, 'Приятел');
     online.note = `Онлайн с ${online.peerName}`;
+    started = true; // for the chat and reactions; the guest still saves nothing
+    if (Array.isArray(msg.chat)) {
+      chatLog = msg.chat.filter((m) => m && typeof m.text === 'string' && typeof m.id === 'string')
+        .slice(-60).map((m) => ({ id: m.id, from: m.from === LIGHT ? LIGHT : DARK, text: m.text.slice(0, CHAT_MAX) }));
+      renderChat();
+    }
     hideOverlay('#lobby');
     hideOverlay('#setup');
+    updateSocial();
     enqueue(async () => {
       if (msg.fresh) {
         await present(state, { k: 'start' }, msg.state);
@@ -2492,25 +3119,46 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     const host = role === 'host';
     $('#lobbyTitle').textContent = host ? 'Покани приятел' : 'Влизаш в играта';
     $('#lobbyText').textContent = host
-      ? 'Прати му този линк. Щом го отвори, играта започва. Ти играеш със светлите.'
+      ? 'Напиши името си и прати линка на приятеля си. Щом го отвори, играта започва. Ти играеш със светлите.'
       : 'Свързваме те с приятеля ти. Ти играеш с тъмните.';
+    $('#hostNameField').hidden = !host;
+    $('#nameFirst').hidden = true;
     $('#invite').hidden = !host;
     $('#shareBtn').hidden = !host || !navigator.share;
-    if (host) $('#inviteLink').value = Net.inviteLink(online.id);
+    if (host) {
+      $('#inviteLink').value = Net.inviteLink(online.id);
+      $('#hostName').value = online.myName;
+      lobbyNameChanged();
+    }
     hideOverlay('#setup');
     showOverlay('#lobby');
+    if (host && !online.myName) setTimeout(() => $('#hostName').focus(), 80);
+  }
+
+  /** The link is handed out only once the host has a name, so nobody plays as "Играч 1". */
+  function lobbyNameChanged() {
+    online.myName = cleanName($('#hostName').value, '');
+    const ready = !!online.myName;
+    $('#invite').classList.toggle('locked', !ready);
+    $('#copyBtn').disabled = !ready;
+    $('#shareBtn').disabled = !ready;
+    $('#nameFirst').hidden = ready;
   }
 
   function leaveOnline() {
     if (online.link) online.link.close();
     const wasGuest = online.role === 'guest';
-    Object.assign(online, { role: null, seat: null, id: null, link: null, peerName: '', connected: false, awaiting: false, note: '' });
+    Object.assign(online, { role: null, seat: null, id: null, link: null, peerName: '', connected: false, awaiting: false, note: '', left: false, busy: false, guestToken: '' });
+    chatLog = [];
+    unread = 0;
+    fair.commit = '';
     if (wasGuest) {
       store(GUEST_STORE, null);
       started = false;
     }
     if (location.hash) clearHash();
     setView(LIGHT);
+    setChatOpen(false);
     $('#joinNote').hidden = true;
     document.querySelectorAll('.host-only').forEach((el) => { el.hidden = false; });
   }
@@ -2540,6 +3188,8 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     if (saved.online) {
       online.myName = saved.online.myName;
       online.peerName = saved.online.peerName || '';
+      online.guestToken = saved.online.guestToken || '';
+      chatLog = Array.isArray(saved.online.chat) ? saved.online.chat : [];
       hostOnline(saved.online.id, true);
     }
     enqueue(async () => {
@@ -2589,35 +3239,76 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       $('#resumeBtn').hidden = true;
       const [n0, n1] = names();
       if ($('#setupForm').classList.contains('joining')) {
+        const mine = cleanName($('#name1').value, '');
+        if (!mine) { nudge('#name1'); return; }
         $('#setupForm').classList.remove('joining');
-        joinOnline(joinId, n1);
+        joinOnline(joinId, mine);
         return;
       }
       startMatch([n0, n1], matchLength);
     });
     $('#hostBtn').addEventListener('click', () => {
       $('#resumeBtn').hidden = true;
-      online.myName = names()[0];
+      online.myName = cleanName($('#name0').value, '');
       online.peerName = '';
+      online.guestToken = '';
+      chatLog = [];
       started = false;
       hostOnline(Net.newId(), false);
     });
   }
 
+  /** Points at a field that still needs filling in. */
+  function nudge(sel) {
+    const el = $(sel);
+    el.focus();
+    el.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-8px)' }, { transform: 'translateX(8px)' }, { transform: 'translateX(0)' }], { duration: dur(260), iterations: 2 });
+    Sound.error();
+  }
+
   function bindLobby() {
+    $('#hostName').addEventListener('input', lobbyNameChanged);
     $('#copyBtn').addEventListener('click', async () => {
+      if (!online.myName) { nudge('#hostName'); return; }
       const input = $('#inviteLink');
       try { await navigator.clipboard.writeText(input.value); } catch (_) { input.select(); document.execCommand('copy'); }
       $('#copyBtn').textContent = 'Копирано ✓';
       setTimeout(() => { $('#copyBtn').textContent = 'Копирай'; }, 1600);
     });
     $('#shareBtn').addEventListener('click', () => {
-      navigator.share({ title: 'Табла', text: 'Ела да играем табла!', url: $('#inviteLink').value }).catch(() => {});
+      if (!online.myName) { nudge('#hostName'); return; }
+      navigator.share({ title: 'Табла', text: `${online.myName} те кани на табла!`, url: $('#inviteLink').value }).catch(() => {});
     });
     $('#lobbyCancel').addEventListener('click', () => {
       leaveOnline();
       hideOverlay('#lobby');
       showOverlay('#setup');
+    });
+  }
+
+  // ---------- names ----------
+  function openRename() {
+    for (const p of [LIGHT, DARK]) {
+      const row = $('#renameRow' + p);
+      const mine = !online.role || online.seat === p;
+      row.hidden = !mine;
+      $('#renameInput' + p).value = state.players[p].name;
+      row.querySelector('.lbl').textContent = online.role ? 'Твоето име' : p === LIGHT ? 'Светли пулове' : 'Тъмни пулове';
+    }
+    hideOverlay('#menu');
+    showOverlay('#rename');
+  }
+
+  function bindRename() {
+    $('#renameForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      for (const p of [LIGHT, DARK]) {
+        if ($('#renameRow' + p).hidden) continue;
+        const name = cleanName($('#renameInput' + p).value, '');
+        if (!name) { nudge('#renameInput' + p); return; }
+        if (name !== state.players[p].name) request({ k: 'rename', seat: p, name });
+      }
+      hideOverlay('#rename');
     });
   }
 
@@ -2648,6 +3339,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
         if (b.dataset.confirm) { b.classList.remove('armed'); b.textContent = b.dataset.label; }
         if (act === 'close') { hideOverlay('#' + b.closest('.overlay').id); }
         else if (act === 'rules') { hideOverlay('#menu'); showOverlay('#rules'); }
+        else if (act === 'rename') { openRename(); }
         else if (act === 'restart') { hideOverlay('#menu'); request({ k: 'restart' }); }
         else if (act === 'newmatch' || act === 'leave') {
           hideOverlay('#menu'); hideOverlay('#over');
@@ -2663,7 +3355,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     });
     document.querySelectorAll('.overlay').forEach((o) => {
       o.addEventListener('pointerdown', (e) => {
-        if (e.target === o && (o.id === 'menu' || o.id === 'rules')) hideOverlay('#' + o.id);
+        if (e.target === o && (o.id === 'menu' || o.id === 'rules' || o.id === 'rename')) hideOverlay('#' + o.id);
       });
     });
   }
@@ -2690,6 +3382,9 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     bindSetup(saved, inviteFromFriend);
     bindLobby();
     bindMenu();
+    bindRename();
+    bindSocial();
+    renderChat();
     const board = $('#board');
     board.addEventListener('pointerdown', onPointerDown);
     board.addEventListener('pointermove', onPointerMove);
@@ -2710,6 +3405,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     // for automated checks only
     window.__tabla = {
       get state() { return state; }, get busy() { return busy; }, get online() { return online; },
+      get chat() { return chatLog; },
       request, E,
     };
   }

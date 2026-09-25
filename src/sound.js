@@ -88,6 +88,16 @@
       const c = ac(); if (!c) return;
       tone(c, c.currentTime, 660, 0.05, 0.06, 'sine');
     },
+    message() {
+      const c = ac(); if (!c) return;
+      const t = c.currentTime;
+      tone(c, t, 880, 0.06, 0.12, 'sine');
+      tone(c, t + 0.09, 1320, 0.05, 0.16, 'sine');
+    },
+    pop() {
+      const c = ac(); if (!c) return;
+      tone(c, c.currentTime, 420, 0.1, 0.14, 'sine', 900);
+    },
     error() {
       const c = ac(); if (!c) return;
       const t = c.currentTime;

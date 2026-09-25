@@ -464,6 +464,10 @@
     connected: false,
     awaiting: false, // the guest asked the host for something and waits for the answer
     note: '',
+    left: false, // the other player pressed "Напусни", rather than just losing the connection
+    busy: false, // the guest was turned away: someone else holds the seat
+    guestToken: '', // the guest's secret; the host keeps the one it let in
+    fairWarnings: 0,
   };
   let awaitTimer = 0;
   let remoteDrag = null; // the checker the other player is dragging right now
@@ -637,6 +641,7 @@
     updateControls();
     updateHighlights();
     updateRollHint();
+    updateSocial();
     save();
   }
 
@@ -714,30 +719,54 @@
       case 'next': return st.phase === 'gameover';
       case 'rematch': return st.phase === 'matchover';
       case 'restart': return seat === null || seat === LIGHT;
+      case 'rename': return typeof a.name === 'string' && (a.seat === LIGHT || a.seat === DARK) && (seat === null || a.seat === seat);
       default: return false;
     }
   }
 
+  /**
+   * The numbers for a throw. Online both browsers take part (fair.js); on one
+   * screen this browser rolls. A throw already made for this turn is reused,
+   * so undo never re-rolls. null: the friend's half is missing (no connection).
+   */
+  async function diceFor(key) {
+    if (rollLog[key]) return { dice: rollLog[key] };
+    if (online.role === 'host') return fairThrow();
+    return { dice: [randomDie(), randomDie()] };
+  }
+
+  const cleanName = (x, fallback) => String(x == null ? '' : x).replace(/\s+/g, ' ').trim().slice(0, 16) || fallback;
+
   /** The referee: settles the dice, records the step for undo and shows it. Runs inside the queue. */
-  function commit(a) {
+  async function commit(a) {
     const prev = state;
     let next;
     let act = { k: a.k };
     switch (a.k) {
-      case 'opening': {
-        const key = `${prev.gameNo}:0`;
-        const dice = rollLog[key] || [randomDie(), randomDie()];
-        next = E.openingRoll(prev, dice[0], dice[1]);
-        if (next.phase !== 'opening') { rollLog[key] = dice; pushHistory(prev); }
+      case 'opening': case 'roll': {
+        const key = a.k === 'opening' ? `${prev.gameNo}:0` : `${prev.gameNo}:${prev.turnSeq}`;
+        const thrown = await diceFor(key);
+        if (!thrown) {
+          toast(`Няма връзка с ${online.peerName || 'приятеля'} — хвърли пак, щом се свърже`, 2600);
+          return undefined;
+        }
+        const dice = thrown.dice;
+        if (a.k === 'opening') {
+          next = E.openingRoll(prev, dice[0], dice[1]);
+          if (next.phase !== 'opening') { rollLog[key] = dice; pushHistory(prev); }
+        } else {
+          rollLog[key] = dice;
+          pushHistory(prev);
+          next = E.roll(prev, dice[0], dice[1]);
+        }
         act.dice = dice;
+        if (thrown.fair) act.fair = thrown.fair;
         break;
       }
-      case 'roll': {
-        const key = `${prev.gameNo}:${prev.turnSeq}`;
-        const dice = rollLog[key] || (rollLog[key] = [randomDie(), randomDie()]);
-        pushHistory(prev);
-        next = E.roll(prev, dice[0], dice[1]);
-        act.dice = dice;
+      case 'rename': {
+        const name = cleanName(a.name, prev.players[a.seat].name);
+        next = { ...prev, players: prev.players.map((p, i) => (i === a.seat ? { name } : p)) };
+        act = { k: 'rename', seat: a.seat, name };
         break;
       }
       case 'move': {
@@ -752,7 +781,7 @@
         next = E.endTurn(prev);
         break;
       case 'undo':
-        next = history.pop();
+        next = { ...history.pop(), players: prev.players }; // a new name survives undo
         break;
       case 'next':
         next = E.nextGame(prev);
@@ -785,6 +814,10 @@
       refresh();
       return;
     }
+    if (online.role === 'host' && !online.connected && (a.k === 'roll' || a.k === 'opening')) {
+      toast(`Чакаме ${online.peerName || 'приятеля'} да се свърже — заровете се хвърлят от двамата`, 2600);
+      return;
+    }
     const seat = online.role === 'host' ? LIGHT : null;
     enqueue(() => (allowed(a, seat) ? commit(a) : undefined));
   }
@@ -807,6 +840,7 @@
   /** Shows an action on screen, from `prev` to `next`. */
   async function present(prev, a, next) {
     clearTimeout(autoTimer);
+    if ((a.k === 'roll' || a.k === 'opening') && online.role === 'guest') checkFair(a);
     const held = heldChecker(a);
     switch (a.k) {
       case 'opening': {
@@ -868,6 +902,15 @@
         syncDice();
         refresh();
         banner(online.role && next.turn === online.seat ? 'Твой ред е' : `Ред е на ${next.players[next.turn].name}`, 1100);
+        break;
+      case 'rename':
+        state = next;
+        if (online.role === 'guest' && a.seat === online.seat) {
+          online.myName = a.name;
+          store(GUEST_STORE, { ...(readStore(GUEST_STORE) || {}), name: a.name });
+        }
+        if (online.role === 'host' && a.seat === online.seat) online.myName = a.name;
+        if (online.role && a.seat !== online.seat) online.peerName = a.name;
         break;
       case 'undo':
         hideOverlay('#over');
@@ -1130,7 +1173,8 @@
   function onKey(e) {
     if (e.target && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') return;
     if (e.key === 'Escape') {
-      if ($('#rules').classList.contains('show')) hideOverlay('#rules');
+      if ($('#rename').classList.contains('show')) hideOverlay('#rename');
+      else if ($('#rules').classList.contains('show')) hideOverlay('#rules');
       else if ($('#menu').classList.contains('show')) hideOverlay('#menu');
       else clearSelection();
       return;
@@ -1179,20 +1223,24 @@
     if (!started || online.role === 'guest') return;
     store(STORE, {
       state, history: history.slice(-200), rollLog, matchLength,
-      online: online.role === 'host' ? { id: online.id, myName: online.myName, peerName: online.peerName } : null,
+      online: online.role === 'host'
+        ? { id: online.id, myName: online.myName, peerName: online.peerName, guestToken: online.guestToken, chat: chatLog }
+        : null,
     });
   }
 
   // ---------- online: host ----------
   function netStatusText(s, detail) {
     const friend = online.peerName || 'приятеля';
+    if (online.busy) return 'Тази игра е заета — някой друг вече е влязъл с този линк';
     if (s === 'error') return 'Този браузър не може да играе онлайн';
+    if (online.left && s !== 'connected') return `${online.peerName || 'Приятелят'} излезе от играта`;
     if (online.role === 'host') {
       if (s === 'starting') return 'Свързване…';
       if (s === 'waiting') return started ? `Чакаме ${friend} да се върне…` : 'Чакаме приятеля да отвори линка…';
       if (s === 'connected') return `Онлайн с ${friend}`;
       if (detail === 'server') return 'Няма интернет — опитвам пак…';
-      return `${online.peerName || 'Приятелят'} се разкачи — чакаме го…`;
+      return `${online.peerName || 'Приятелят'} се разкачи — изчакай да се върне…`;
     }
     if (s === 'connecting') return 'Свързване…';
     if (s === 'connected') return `Онлайн с ${friend}`;
@@ -1205,31 +1253,286 @@
     online.connected = s === 'connected';
     online.note = netStatusText(s, detail);
     $('#lobbyStatus').textContent = online.note;
-    $('#lobby').classList.toggle('failed', s === 'error');
-    if (state) { updateCards(); updateControls(); }
+    $('#lobby').classList.toggle('failed', s === 'error' || online.busy);
+    if (state) { updateCards(); updateControls(); updateSocial(); }
   }
 
   function hostOnline(id, restored) {
     online.role = 'host';
     online.seat = LIGHT;
     online.id = id;
-    online.link = Net.host(id, { onMessage: onNetMessage, onStatus: onNetStatus });
+    online.link = Net.host(id, { onMessage: onNetMessage, onStatus: onNetStatus, admit });
     if (!restored) showLobby('host');
   }
 
+  /**
+   * Who may sit in the guest's seat: the first browser to arrive, and after
+   * that only that browser again (it proves it with its secret token).
+   * Anyone else holding the link is turned away.
+   */
+  function admit(hello) {
+    const token = typeof hello.token === 'string' ? hello.token.slice(0, 64) : '';
+    if (!token) return false;
+    if (!online.guestToken) {
+      online.guestToken = token;
+      save();
+      return true;
+    }
+    return token === online.guestToken;
+  }
+
   function sendSync(fresh) {
-    send({ t: 'sync', state, fresh: !!fresh, hostName: online.myName });
+    send({ t: 'sync', state, fresh: !!fresh, hostName: online.myName, chat: chatLog });
+  }
+
+  // ---------- online: fair dice ----------
+  const Fair = window.TablaFair;
+  const randomBytes = (a) => crypto.getRandomValues(a);
+  const fair = { k: 0, hostSeed: '', commit: '', guestSeed: '' }; // the host's side
+  const fairGuest = { commits: {}, mySeeds: {} }; // the guest's side
+
+  /** The host locks in its half of the next throw and shows the guest only its fingerprint. */
+  function newCommit() {
+    fair.k += 1;
+    fair.hostSeed = Fair.newSeed(randomBytes);
+    fair.commit = Fair.fingerprint(fair.hostSeed);
+    fair.guestSeed = '';
+    send({ t: 'commit', k: fair.k, commit: fair.commit });
+  }
+
+  /** Both halves together: the throw. Waits for the guest's half; null if it never comes. */
+  async function fairThrow() {
+    if (!fair.commit) newCommit();
+    const until = Date.now() + 15000;
+    let resent = Date.now();
+    while (!fair.guestSeed) {
+      if (!online.connected || Date.now() > until) return null;
+      if (Date.now() - resent > 2000) {
+        send({ t: 'commit', k: fair.k, commit: fair.commit });
+        resent = Date.now();
+      }
+      await new Promise((r) => setTimeout(r, 60));
+    }
+    const proof = { k: fair.k, hostSeed: fair.hostSeed, guestSeed: fair.guestSeed };
+    const dice = Fair.diceFrom(proof.hostSeed, proof.guestSeed);
+    newCommit();
+    return { dice, fair: proof };
+  }
+
+  /** The guest checks every throw before believing it. */
+  function checkFair(a) {
+    const f = a.fair || {};
+    const ok = Fair.verify({
+      commit: fairGuest.commits[f.k],
+      hostSeed: f.hostSeed,
+      guestSeed: f.guestSeed,
+      dice: a.dice,
+      myGuestSeed: fairGuest.mySeeds[f.k],
+    });
+    if (!ok) {
+      online.fairWarnings += 1;
+      toast('⚠ Това хвърляне не мина проверката за честни зарове', 5000);
+    }
+  }
+
+  function onCommit(msg) {
+    const k = Number(msg.k);
+    if (!Number.isInteger(k) || typeof msg.commit !== 'string') return;
+    fairGuest.commits[k] = msg.commit.slice(0, 64);
+    const seed = fairGuest.mySeeds[k] || (fairGuest.mySeeds[k] = Fair.newSeed(randomBytes));
+    for (const old of Object.keys(fairGuest.commits)) {
+      if (+old < k - 8) { delete fairGuest.commits[old]; delete fairGuest.mySeeds[old]; }
+    }
+    send({ t: 'seed', k, seed });
+  }
+
+  function onSeed(msg) {
+    if (Number(msg.k) !== fair.k || fair.guestSeed || typeof msg.seed !== 'string') return;
+    fair.guestSeed = msg.seed.slice(0, 64);
+  }
+
+  // ---------- online: chat and reactions ----------
+  const EMOJI = ['👍', '😂', '😮', '😤'];
+  const CHAT_MAX = 200;
+  let chatLog = []; // [{id, from, text}], newest last; the host's copy is the one that is kept
+  let unread = 0;
+  const lastHeard = { chat: 0, emo: 0 };
+  const lastSaid = { chat: 0, emo: 0 };
+  /** Too many in a row from the other side are simply dropped. */
+  function tooSoon(kind, gap) {
+    const now = Date.now();
+    if (now - lastHeard[kind] < gap) return true;
+    lastHeard[kind] = now;
+    return false;
+  }
+
+  function addChat(entry) {
+    if (chatLog.some((m) => m.id === entry.id)) return;
+    chatLog.push(entry);
+    if (chatLog.length > 60) chatLog = chatLog.slice(-60);
+    renderChat();
+    if (online.role === 'host') save();
+  }
+
+  function renderChat() {
+    const list = $('#chatList');
+    list.textContent = '';
+    if (!chatLog.length) {
+      const p = document.createElement('p');
+      p.className = 'chat-empty';
+      p.textContent = 'Още няма съобщения. Кажи здрасти!';
+      list.appendChild(p);
+    }
+    for (const m of chatLog) {
+      const row = document.createElement('div');
+      row.className = 'msg ' + (m.from === online.seat ? 'mine' : 'theirs');
+      row.textContent = m.text; // text only: nothing a friend types can run as code here
+      list.appendChild(row);
+    }
+    list.scrollTop = list.scrollHeight;
+  }
+
+  const chatOpen = () => $('#chat').classList.contains('open');
+
+  function setChatOpen(open) {
+    $('#chat').classList.toggle('open', open);
+    $('#chat').setAttribute('aria-hidden', open ? 'false' : 'true');
+    $('#chatBtn').setAttribute('aria-expanded', String(open));
+    if (open) {
+      unread = 0;
+      renderChat();
+      setTimeout(() => $('#chatInput').focus({ preventScroll: true }), 60);
+    }
+    updateSocial();
+  }
+
+  function updateSocial() {
+    const on = !!online.role && started;
+    $('#social').hidden = !on;
+    if (!on && chatOpen()) setChatOpen(false);
+    const badge = $('#chatBadge');
+    badge.hidden = !unread;
+    badge.textContent = String(unread);
+    $('#chatTitle').textContent = online.peerName ? `Чат с ${online.peerName}` : 'Чат';
+    document.querySelectorAll('#social .emo').forEach((b) => { b.disabled = !online.connected; });
+  }
+
+  function sendChat(text) {
+    const clean = String(text).replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX);
+    if (!clean || !online.connected) return false;
+    const now = Date.now();
+    if (now - lastSaid.chat < 600) return false;
+    lastSaid.chat = now;
+    const entry = { id: Net.newId().slice(6), from: online.seat, text: clean };
+    send({ t: 'chat', id: entry.id, text: clean });
+    addChat(entry);
+    Sound.tap();
+    return true;
+  }
+
+  function onChat(msg) {
+    if (tooSoon('chat', 400)) return;
+    const text = typeof msg.text === 'string' ? msg.text.replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX) : '';
+    const id = typeof msg.id === 'string' ? msg.id.slice(0, 24) : '';
+    if (!text || !id) return;
+    addChat({ id, from: 1 - online.seat, text });
+    Sound.message();
+    if (!chatOpen()) {
+      unread += 1;
+      updateSocial();
+      bubble(1 - online.seat, text);
+    }
+  }
+
+  /** A speech bubble by the player's card, for a moment. */
+  function bubble(p, text) {
+    const r = cardOf(p).getBoundingClientRect();
+    const b = document.createElement('div');
+    b.className = 'bubble ' + (atBottom(p) ? 'from-bottom' : 'from-top');
+    b.textContent = text;
+    b.style.left = Math.min(innerWidth - 16, Math.max(16, r.left + 24)) + 'px';
+    b.style.top = (atBottom(p) ? r.top - 8 : r.bottom + 8) + 'px';
+    document.body.appendChild(b);
+    b.addEventListener('click', () => setChatOpen(true));
+    b.animate([
+      { opacity: 0, transform: `translateY(${atBottom(p) ? 10 : -10}px) scale(0.9)` },
+      { opacity: 1, transform: 'none', offset: 0.06 },
+      { opacity: 1, transform: 'none', offset: 0.9 },
+      { opacity: 0, transform: 'scale(0.96)' },
+    ], { duration: reduced.matches ? 4000 : 4200, easing: EASE_OUT }).finished.then(() => b.remove(), () => b.remove());
+  }
+
+  function sendEmoji(e) {
+    if (!EMOJI.includes(e) || !online.connected) return;
+    const now = Date.now();
+    if (now - lastSaid.emo < 450) return;
+    lastSaid.emo = now;
+    send({ t: 'emo', e });
+    flyEmoji(online.seat, e);
+  }
+
+  function onEmoji(msg) {
+    if (!EMOJI.includes(msg.e) || tooSoon('emo', 300)) return;
+    flyEmoji(1 - online.seat, msg.e);
+  }
+
+  /** The reaction rises from the sender's card over the board. */
+  function flyEmoji(p, e) {
+    const card = cardOf(p).getBoundingClientRect();
+    const board = $('#boardBox').getBoundingClientRect();
+    const el = document.createElement('div');
+    el.className = 'flying-emoji';
+    el.textContent = e;
+    const x0 = card.left + card.width / 2;
+    const y0 = card.top + card.height / 2;
+    const x1 = board.left + board.width * (0.35 + Math.random() * 0.3);
+    const y1 = board.top + board.height * (atBottom(p) ? 0.35 : 0.65);
+    el.style.left = x0 + 'px';
+    el.style.top = y0 + 'px';
+    document.body.appendChild(el);
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const spin = Math.random() < 0.5 ? -18 : 18;
+    Sound.pop();
+    el.animate([
+      { transform: 'translate(-50%, -50%) scale(0.3)', opacity: 0 },
+      { transform: `translate(calc(-50% + ${dx * 0.45}px), calc(-50% + ${dy * 0.45}px)) scale(1.9) rotate(${spin}deg)`, opacity: 1, offset: 0.35 },
+      { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(1.5) rotate(${-spin / 2}deg)`, opacity: 1, offset: 0.75 },
+      { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy - 40}px)) scale(1.3)`, opacity: 0 },
+    ], { duration: reduced.matches ? 1200 : 1700, easing: EASE_OUT }).finished.then(() => el.remove(), () => el.remove());
+  }
+
+  function bindSocial() {
+    const bar = $('#emojiBar');
+    for (const e of EMOJI) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'emo';
+      b.textContent = e;
+      b.setAttribute('aria-label', 'Реакция ' + e);
+      b.addEventListener('click', () => sendEmoji(e));
+      bar.appendChild(b);
+    }
+    $('#chatBtn').addEventListener('click', () => setChatOpen(!chatOpen()));
+    $('#chatClose').addEventListener('click', () => setChatOpen(false));
+    $('#chatForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = $('#chatInput');
+      if (sendChat(input.value)) input.value = '';
+    });
+    $('#chatInput').addEventListener('keydown', (e) => { if (e.key === 'Escape') setChatOpen(false); });
   }
 
   function onNetMessage(msg) {
     if (!msg || typeof msg !== 'object') return;
     switch (msg.t) {
       case 'open':
-        if (online.role === 'guest') send({ t: 'hello', name: online.myName, v: 1 });
+        if (online.role === 'guest') send({ t: 'hello', name: online.myName, token: online.guestToken, v: 2 });
         break;
       case 'hello':
         if (online.role !== 'host') break;
-        online.peerName = String(msg.name || 'Приятел').slice(0, 16);
+        online.peerName = cleanName(msg.name, 'Приятел');
+        online.left = false;
         if (!started) {
           startMatch([online.myName, online.peerName], matchLength);
           enqueue(() => sendSync(true));
@@ -1239,8 +1542,17 @@
           }
           enqueue(() => sendSync(false));
         }
+        // a fresh lock for the next throw, now that the guest is (back) here
+        enqueue(() => newCommit());
         toast(`${online.peerName} е тук`);
         onNetStatus('connected');
+        break;
+      case 'busy':
+        if (online.role !== 'guest') break;
+        online.busy = true;
+        online.link.close();
+        onNetStatus('error');
+        showOverlay('#lobby');
         break;
       case 'sync':
         if (online.role === 'guest') applySync(msg);
@@ -1255,8 +1567,20 @@
         clearTimeout(awaitTimer);
         enqueue(() => present(state, msg.a, msg.state));
         break;
+      case 'commit':
+        if (online.role === 'guest') onCommit(msg);
+        break;
+      case 'seed':
+        if (online.role === 'host') onSeed(msg);
+        break;
+      case 'chat':
+        onChat(msg);
+        break;
+      case 'emo':
+        onEmoji(msg);
+        break;
       case 'drag':
-        onRemoteDrag(msg);
+        if (typeof msg.x === 'number' && typeof msg.y === 'number') onRemoteDrag(msg);
         break;
       case 'drop':
         settleRemoteDrag();
@@ -1267,9 +1591,10 @@
         break;
       case 'bye':
         online.connected = false;
+        online.left = true;
         online.note = `${online.peerName || 'Приятелят'} излезе от играта`;
         toast(online.note, 3000);
-        if (state) { updateCards(); updateControls(); }
+        if (state) { updateCards(); updateControls(); updateSocial(); }
         break;
     }
   }
@@ -1280,7 +1605,10 @@
     online.seat = DARK;
     online.id = hostId;
     online.myName = name;
-    store(GUEST_STORE, { hostId, name });
+    online.busy = false;
+    const g = readStore(GUEST_STORE);
+    online.guestToken = g && g.hostId === hostId && g.token ? g.token : Net.newToken();
+    store(GUEST_STORE, { hostId, name, token: online.guestToken });
     state = { ...state, players: [{ name: '…' }, { name }] };
     setView(DARK);
     showLobby('guest');
@@ -1289,10 +1617,18 @@
 
   function applySync(msg) {
     online.awaiting = false;
-    online.peerName = String(msg.hostName || msg.state.players[LIGHT].name);
+    online.left = false;
+    online.peerName = cleanName(msg.hostName || msg.state.players[LIGHT].name, 'Приятел');
     online.note = `Онлайн с ${online.peerName}`;
+    started = true; // for the chat and reactions; the guest still saves nothing
+    if (Array.isArray(msg.chat)) {
+      chatLog = msg.chat.filter((m) => m && typeof m.text === 'string' && typeof m.id === 'string')
+        .slice(-60).map((m) => ({ id: m.id, from: m.from === LIGHT ? LIGHT : DARK, text: m.text.slice(0, CHAT_MAX) }));
+      renderChat();
+    }
     hideOverlay('#lobby');
     hideOverlay('#setup');
+    updateSocial();
     enqueue(async () => {
       if (msg.fresh) {
         await present(state, { k: 'start' }, msg.state);
@@ -1310,25 +1646,46 @@
     const host = role === 'host';
     $('#lobbyTitle').textContent = host ? 'Покани приятел' : 'Влизаш в играта';
     $('#lobbyText').textContent = host
-      ? 'Прати му този линк. Щом го отвори, играта започва. Ти играеш със светлите.'
+      ? 'Напиши името си и прати линка на приятеля си. Щом го отвори, играта започва. Ти играеш със светлите.'
       : 'Свързваме те с приятеля ти. Ти играеш с тъмните.';
+    $('#hostNameField').hidden = !host;
+    $('#nameFirst').hidden = true;
     $('#invite').hidden = !host;
     $('#shareBtn').hidden = !host || !navigator.share;
-    if (host) $('#inviteLink').value = Net.inviteLink(online.id);
+    if (host) {
+      $('#inviteLink').value = Net.inviteLink(online.id);
+      $('#hostName').value = online.myName;
+      lobbyNameChanged();
+    }
     hideOverlay('#setup');
     showOverlay('#lobby');
+    if (host && !online.myName) setTimeout(() => $('#hostName').focus(), 80);
+  }
+
+  /** The link is handed out only once the host has a name, so nobody plays as "Играч 1". */
+  function lobbyNameChanged() {
+    online.myName = cleanName($('#hostName').value, '');
+    const ready = !!online.myName;
+    $('#invite').classList.toggle('locked', !ready);
+    $('#copyBtn').disabled = !ready;
+    $('#shareBtn').disabled = !ready;
+    $('#nameFirst').hidden = ready;
   }
 
   function leaveOnline() {
     if (online.link) online.link.close();
     const wasGuest = online.role === 'guest';
-    Object.assign(online, { role: null, seat: null, id: null, link: null, peerName: '', connected: false, awaiting: false, note: '' });
+    Object.assign(online, { role: null, seat: null, id: null, link: null, peerName: '', connected: false, awaiting: false, note: '', left: false, busy: false, guestToken: '' });
+    chatLog = [];
+    unread = 0;
+    fair.commit = '';
     if (wasGuest) {
       store(GUEST_STORE, null);
       started = false;
     }
     if (location.hash) clearHash();
     setView(LIGHT);
+    setChatOpen(false);
     $('#joinNote').hidden = true;
     document.querySelectorAll('.host-only').forEach((el) => { el.hidden = false; });
   }
@@ -1358,6 +1715,8 @@
     if (saved.online) {
       online.myName = saved.online.myName;
       online.peerName = saved.online.peerName || '';
+      online.guestToken = saved.online.guestToken || '';
+      chatLog = Array.isArray(saved.online.chat) ? saved.online.chat : [];
       hostOnline(saved.online.id, true);
     }
     enqueue(async () => {
@@ -1407,35 +1766,76 @@
       $('#resumeBtn').hidden = true;
       const [n0, n1] = names();
       if ($('#setupForm').classList.contains('joining')) {
+        const mine = cleanName($('#name1').value, '');
+        if (!mine) { nudge('#name1'); return; }
         $('#setupForm').classList.remove('joining');
-        joinOnline(joinId, n1);
+        joinOnline(joinId, mine);
         return;
       }
       startMatch([n0, n1], matchLength);
     });
     $('#hostBtn').addEventListener('click', () => {
       $('#resumeBtn').hidden = true;
-      online.myName = names()[0];
+      online.myName = cleanName($('#name0').value, '');
       online.peerName = '';
+      online.guestToken = '';
+      chatLog = [];
       started = false;
       hostOnline(Net.newId(), false);
     });
   }
 
+  /** Points at a field that still needs filling in. */
+  function nudge(sel) {
+    const el = $(sel);
+    el.focus();
+    el.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-8px)' }, { transform: 'translateX(8px)' }, { transform: 'translateX(0)' }], { duration: dur(260), iterations: 2 });
+    Sound.error();
+  }
+
   function bindLobby() {
+    $('#hostName').addEventListener('input', lobbyNameChanged);
     $('#copyBtn').addEventListener('click', async () => {
+      if (!online.myName) { nudge('#hostName'); return; }
       const input = $('#inviteLink');
       try { await navigator.clipboard.writeText(input.value); } catch (_) { input.select(); document.execCommand('copy'); }
       $('#copyBtn').textContent = 'Копирано ✓';
       setTimeout(() => { $('#copyBtn').textContent = 'Копирай'; }, 1600);
     });
     $('#shareBtn').addEventListener('click', () => {
-      navigator.share({ title: 'Табла', text: 'Ела да играем табла!', url: $('#inviteLink').value }).catch(() => {});
+      if (!online.myName) { nudge('#hostName'); return; }
+      navigator.share({ title: 'Табла', text: `${online.myName} те кани на табла!`, url: $('#inviteLink').value }).catch(() => {});
     });
     $('#lobbyCancel').addEventListener('click', () => {
       leaveOnline();
       hideOverlay('#lobby');
       showOverlay('#setup');
+    });
+  }
+
+  // ---------- names ----------
+  function openRename() {
+    for (const p of [LIGHT, DARK]) {
+      const row = $('#renameRow' + p);
+      const mine = !online.role || online.seat === p;
+      row.hidden = !mine;
+      $('#renameInput' + p).value = state.players[p].name;
+      row.querySelector('.lbl').textContent = online.role ? 'Твоето име' : p === LIGHT ? 'Светли пулове' : 'Тъмни пулове';
+    }
+    hideOverlay('#menu');
+    showOverlay('#rename');
+  }
+
+  function bindRename() {
+    $('#renameForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      for (const p of [LIGHT, DARK]) {
+        if ($('#renameRow' + p).hidden) continue;
+        const name = cleanName($('#renameInput' + p).value, '');
+        if (!name) { nudge('#renameInput' + p); return; }
+        if (name !== state.players[p].name) request({ k: 'rename', seat: p, name });
+      }
+      hideOverlay('#rename');
     });
   }
 
@@ -1466,6 +1866,7 @@
         if (b.dataset.confirm) { b.classList.remove('armed'); b.textContent = b.dataset.label; }
         if (act === 'close') { hideOverlay('#' + b.closest('.overlay').id); }
         else if (act === 'rules') { hideOverlay('#menu'); showOverlay('#rules'); }
+        else if (act === 'rename') { openRename(); }
         else if (act === 'restart') { hideOverlay('#menu'); request({ k: 'restart' }); }
         else if (act === 'newmatch' || act === 'leave') {
           hideOverlay('#menu'); hideOverlay('#over');
@@ -1481,7 +1882,7 @@
     });
     document.querySelectorAll('.overlay').forEach((o) => {
       o.addEventListener('pointerdown', (e) => {
-        if (e.target === o && (o.id === 'menu' || o.id === 'rules')) hideOverlay('#' + o.id);
+        if (e.target === o && (o.id === 'menu' || o.id === 'rules' || o.id === 'rename')) hideOverlay('#' + o.id);
       });
     });
   }
@@ -1508,6 +1909,9 @@
     bindSetup(saved, inviteFromFriend);
     bindLobby();
     bindMenu();
+    bindRename();
+    bindSocial();
+    renderChat();
     const board = $('#board');
     board.addEventListener('pointerdown', onPointerDown);
     board.addEventListener('pointermove', onPointerMove);
@@ -1528,6 +1932,7 @@
     // for automated checks only
     window.__tabla = {
       get state() { return state; }, get busy() { return busy; }, get online() { return online; },
+      get chat() { return chatLog; },
       request, E,
     };
   }
