@@ -1,0 +1,2047 @@
+<!doctype html>
+<html lang="bg">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#140f0c">
+<title>Табла</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='6' y='6' width='52' height='52' rx='12' fill='%23f3ead8'/%3E%3Cg fill='%232a1a16'%3E%3Ccircle cx='20' cy='20' r='5'/%3E%3Ccircle cx='32' cy='32' r='5'/%3E%3Ccircle cx='44' cy='44' r='5'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+/* One palette, one set of timings — everything on screen draws from these. */
+:root {
+  --bg-0: #120d0a;
+  --bg-1: #1f1712;
+  --bg-2: #2b2019;
+  --line: rgba(243, 233, 210, 0.12);
+  --text: #f3e9d2;
+  --text-dim: rgba(243, 233, 210, 0.6);
+  --gold: #e7b85c;
+  --gold-hi: #ffd88a;
+  --gold-glow: rgba(231, 184, 92, 0.55);
+  --danger: #e0745a;
+  --light-0: #fffaf0;
+  --light-1: #efe3c8;
+  --light-2: #c9b288;
+  --dark-0: #75544b;
+  --dark-1: #3d2622;
+  --dark-2: #1a0f0d;
+
+  --t-fast: 160ms;
+  --t-med: 320ms;
+  --t-slow: 620ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --radius: 16px;
+  --font-display: Georgia, 'Times New Roman', serif;
+  --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background:
+    radial-gradient(ellipse at 50% 35%, #33251c 0%, var(--bg-1) 45%, var(--bg-0) 100%) fixed;
+  color: var(--text);
+  font-family: var(--font-ui);
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+button { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+svg { display: block; }
+
+/* ---------- layout ---------- */
+#app {
+  height: 100vh;
+  height: 100dvh;
+  display: grid;
+  gap: 10px;
+  padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "top" "board" "bottom" "controls";
+  transition: opacity var(--t-slow) var(--ease-out), filter var(--t-slow) var(--ease-out);
+}
+#app[aria-hidden="true"] { filter: blur(3px) brightness(0.7); }
+#card1 { grid-area: top; }
+#card0 { grid-area: bottom; }
+#boardWrap { grid-area: board; position: relative; display: grid; place-items: center; min-height: 0; }
+.controls { grid-area: controls; }
+
+@media (min-aspect-ratio: 5/4) {
+  #app {
+    grid-template-columns: clamp(190px, 21vw, 280px) minmax(0, 1fr);
+    grid-template-rows: 1fr auto 1fr;
+    grid-template-areas: "top board" "controls board" "bottom board";
+    gap: 14px 18px;
+    padding: 18px;
+  }
+  #card1 { align-self: start; }
+  #card0 { align-self: end; }
+}
+
+
+#boardBox { position: relative; }
+#board {
+  position: absolute; left: 0; top: 0;
+  width: 1000px; height: 780px;
+  transform-origin: 0 0;
+  touch-action: none;
+  filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.55));
+}
+#boardArt { position: absolute; inset: 0; }
+
+/* ---------- player cards ---------- */
+.player {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+  border: 1px solid var(--line);
+  position: relative;
+  transition: border-color var(--t-med) var(--ease-out), background var(--t-med) var(--ease-out), opacity var(--t-med) var(--ease-out);
+  opacity: 0.62;
+}
+.player::after {
+  content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none;
+  box-shadow: 0 0 0 1.5px var(--gold), 0 0 26px var(--gold-glow);
+  opacity: 0; transition: opacity var(--t-med) var(--ease-out);
+}
+.player.active { opacity: 1; background: linear-gradient(180deg, rgba(231, 184, 92, 0.12), rgba(231, 184, 92, 0.03)); }
+.player.active::after { opacity: 1; animation: breathe 2.4s ease-in-out infinite; }
+.player .who { flex: 1; min-width: 0; }
+.player .name {
+  font-family: var(--font-display); font-size: 1.2rem; letter-spacing: 0.02em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.player .meta { display: flex; align-items: center; gap: 10px; font-size: 0.82rem; color: var(--text-dim); margin-top: 3px; font-variant-numeric: tabular-nums; }
+.offbar { flex: 1; max-width: 90px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.offbar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, var(--gold), var(--gold-hi)); transform-origin: 0 50%; transform: scaleX(0); transition: transform var(--t-slow) var(--ease-out); }
+.player .score { font-family: var(--font-display); font-size: 2.2rem; line-height: 1; min-width: 1.4em; text-align: right; font-variant-numeric: tabular-nums; }
+.player .score b { display: inline-block; font-weight: 400; }
+.player .score b.bump { animation: bump var(--t-slow) var(--ease-spring); color: var(--gold-hi); }
+
+.token { width: 34px; height: 34px; border-radius: 50%; flex: none; }
+.token.light { background: radial-gradient(circle at 35% 30%, var(--light-0), var(--light-1) 45%, var(--light-2)); box-shadow: inset 0 0 0 4px rgba(255,255,255,.3), inset 0 0 0 5px rgba(120,90,50,.35), 0 2px 5px rgba(0,0,0,.5); }
+.token.dark { background: radial-gradient(circle at 35% 30%, var(--dark-0), var(--dark-1) 50%, var(--dark-2)); box-shadow: inset 0 0 0 4px rgba(214,170,90,.18), inset 0 0 0 5px rgba(214,170,90,.35), 0 2px 5px rgba(0,0,0,.5); }
+
+/* ---------- controls ---------- */
+.controls { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+.controls .buttons { display: flex; gap: 8px; }
+.controls .match { text-align: center; font-size: 0.8rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim); }
+.status { min-height: 1.3em; text-align: center; font-size: 0.92rem; color: var(--text-dim); }
+@media (max-aspect-ratio: 5/4) {
+  .controls { flex-direction: column-reverse; }
+  .controls .match { display: none; }
+}
+
+.btn {
+  appearance: none; border: 0; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 46px; padding: 0 16px; border-radius: 12px;
+  font-weight: 600; letter-spacing: 0.02em;
+  transition: transform var(--t-fast) var(--ease-out), opacity var(--t-med) var(--ease-out), background var(--t-med) var(--ease-out), box-shadow var(--t-med) var(--ease-out);
+}
+.btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.btn:active:not(:disabled) { transform: scale(0.96); }
+.btn:disabled { opacity: 0.38; cursor: default; }
+.btn:focus-visible, .chips button:focus-visible, input:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 2px; }
+.btn.primary {
+  flex: 1; color: #2a1a0e;
+  background: linear-gradient(180deg, var(--gold-hi), var(--gold));
+  box-shadow: 0 6px 18px rgba(231, 184, 92, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.btn.primary.pulse:not(:disabled) { animation: pulse 1.6s ease-in-out infinite; }
+.btn.ghost { background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line); }
+.btn.ghost:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
+.btn.icon { width: 46px; padding: 0; }
+.btn.wide { width: 100%; }
+.btn.big { height: 54px; font-size: 1.05rem; width: 100%; }
+.btn.danger.armed { background: rgba(224, 116, 90, 0.2); border-color: var(--danger); color: #ffd6cb; }
+.btn.link { background: none; height: auto; padding: 6px; color: var(--text-dim); font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
+#mainBtn span { display: inline-block; white-space: nowrap; }
+#mainBtn span.swap { animation: swapIn var(--t-med) var(--ease-out); }
+
+/* ---------- checkers ---------- */
+#checkers { position: absolute; inset: 0; }
+.checker {
+  position: absolute; left: 0; top: 0; width: 58px; height: 58px;
+  will-change: transform;
+  pointer-events: none;
+}
+.checker .lift { position: absolute; inset: 0; transition: transform var(--t-med) var(--ease-spring); }
+.checker .face {
+  position: absolute; inset: 0; border-radius: 50%;
+  transition: transform var(--t-med) var(--ease-out);
+}
+.checker::before { /* shadow on the felt; grows while the checker is in the air */
+  content: ""; position: absolute; inset: 6px 4px 0 6px; border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5); filter: blur(4px);
+  transform: translate(2px, 4px);
+  transition: transform var(--t-med) var(--ease-out), opacity var(--t-med) var(--ease-out);
+}
+.checker.lifted::before { transform: translate(10px, 18px) scale(1.05); opacity: 0.55; }
+.checker.lifted .lift, .checker.dragging .lift { transform: scale(1.16); }
+.checker.light .face {
+  background: radial-gradient(circle at 35% 30%, var(--light-0) 0%, var(--light-1) 45%, var(--light-2) 100%);
+  box-shadow: inset 0 0 0 7px rgba(255, 255, 255, 0.28), inset 0 0 0 8.5px rgba(130, 96, 52, 0.4), inset 0 -3px 5px rgba(90, 60, 30, 0.35);
+}
+.checker.dark .face {
+  background: radial-gradient(circle at 35% 30%, var(--dark-0) 0%, var(--dark-1) 50%, var(--dark-2) 100%);
+  box-shadow: inset 0 0 0 7px rgba(214, 170, 90, 0.12), inset 0 0 0 8.5px rgba(214, 170, 90, 0.42), inset 0 -3px 5px rgba(0, 0, 0, 0.5);
+}
+.checker .face::after { /* gold ring: "this one can move" */
+  content: ""; position: absolute; inset: -4px; border-radius: 50%;
+  box-shadow: 0 0 0 3px var(--gold), 0 0 16px var(--gold-glow);
+  opacity: 0; transform: scale(0.9);
+  transition: opacity var(--t-med) var(--ease-out), transform var(--t-med) var(--ease-out);
+}
+.checker.movable .face::after { opacity: 0.55; transform: scale(1); animation: ring 1.8s ease-in-out infinite; }
+.checker.selected .lift { transform: scale(1.12); }
+.checker.selected .face::after { opacity: 1; transform: scale(1); animation: none; }
+.checker.slab .face { transform: scaleY(0.3); }
+.checker.slab::before { opacity: 0.25; transform: translate(1px, 1px) scaleY(0.3); }
+.checker.slab .face::after { display: none; }
+.checker .count {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font: 700 22px var(--font-ui); pointer-events: none; opacity: 0;
+  transition: opacity var(--t-med) var(--ease-out);
+}
+.checker.light .count { color: rgba(90, 60, 30, 0.8); }
+.checker.dark .count { color: rgba(240, 210, 150, 0.85); }
+.checker.show-count .count { opacity: 1; }
+
+/* ---------- target highlights ---------- */
+#hls { position: absolute; inset: 0; pointer-events: none; }
+.hl {
+  position: absolute; opacity: 0;
+  transition: opacity var(--t-med) var(--ease-out), transform var(--t-med) var(--ease-out);
+  transform: scaleY(0.92);
+}
+.hl.pt { width: 65px; height: 300px; }
+.hl.pt.top { transform-origin: 50% 0; clip-path: polygon(0 0, 100% 0, 50% 100%); background: linear-gradient(180deg, rgba(255, 216, 138, 0.95), rgba(231, 184, 92, 0.25)); }
+.hl.pt.bottom { transform-origin: 50% 100%; clip-path: polygon(0 100%, 100% 100%, 50% 0); background: linear-gradient(0deg, rgba(255, 216, 138, 0.95), rgba(231, 184, 92, 0.25)); }
+.hl.tray { width: 85px; height: 365px; border-radius: 10px; box-shadow: inset 0 0 0 3px var(--gold), inset 0 0 30px var(--gold-glow); }
+.hl.on { opacity: 0.8; transform: scaleY(1); animation: glow 1.4s ease-in-out infinite; }
+.spot { /* where the selected checker would land */
+  position: absolute; left: 0; top: 0; width: 58px; height: 58px; border-radius: 50%;
+  border: 3px dashed var(--gold-hi); background: rgba(255, 216, 138, 0.18);
+  box-shadow: 0 0 18px var(--gold-glow);
+  pointer-events: none; z-index: 400;
+  animation: spotIn var(--t-med) var(--ease-spring) both, spin 6s linear infinite;
+}
+.spot.hover { background: rgba(255, 216, 138, 0.45); border-style: solid; }
+.spot.tray { border-radius: 10px; height: 20px; }
+.hl.hover { animation: none; opacity: 1; filter: brightness(1.35); }
+
+/* ---------- dice ---------- */
+#dice { position: absolute; inset: 0; pointer-events: none; }
+.die { position: absolute; left: 0; top: 0; width: 56px; height: 56px; transform-style: preserve-3d; opacity: 0; }
+.die .scale { position: absolute; inset: 0; perspective: 700px; /* each die looks straight on, wherever it lands */ transition: transform var(--t-med) var(--ease-out), opacity var(--t-med) var(--ease-out); }
+.die.used .scale { transform: scale(0.78); opacity: 0.32; }
+.die .shadow { position: absolute; inset: 8px; border-radius: 12px; background: rgba(0, 0, 0, 0.55); filter: blur(6px); transform: translate(4px, 8px) translateZ(-40px); }
+.cube { position: absolute; inset: 0; transform-style: preserve-3d; }
+.cube .f {
+  position: absolute; inset: 0; border-radius: 9px;
+  background: radial-gradient(circle at 30% 25%, #fffdf7, #f1e6cf 60%, #d9c7a2);
+  outline: 1px solid #e6d6b4; outline-offset: -1px;
+  box-shadow: inset 0 0 0 1px rgba(120, 90, 50, 0.25), inset 0 -4px 8px rgba(120, 90, 50, 0.25);
+  display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); padding: 8px;
+  backface-visibility: hidden;
+}
+.cube .f i { width: 10px; height: 10px; margin: auto; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #5a2a22, #1d0c09); box-shadow: inset 0 1px 1px rgba(0,0,0,.6); }
+.cube .f.f1 i { background: radial-gradient(circle at 40% 35%, #d2503a, #7a1d12); width: 13px; height: 13px; }
+.cube .f1 { transform: translateZ(28px); }
+.cube .f6 { transform: rotateY(180deg) translateZ(28px); }
+.cube .f2 { transform: rotateY(90deg) translateZ(28px); }
+.cube .f5 { transform: rotateY(-90deg) translateZ(28px); }
+.cube .f3 { transform: rotateX(90deg) translateZ(28px); }
+.cube .f4 { transform: rotateX(-90deg) translateZ(28px); }
+
+#rollHint {
+  position: absolute; left: 0; top: 0; width: 220px; height: 120px; margin: -60px 0 0 -110px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  pointer-events: none; opacity: 0; transform: scale(0.9);
+  transition: opacity var(--t-med) var(--ease-out), transform var(--t-med) var(--ease-spring);
+}
+#rollHint.show { opacity: 1; transform: scale(1); }
+#rollHint .ghost { display: flex; gap: 14px; }
+#rollHint .ghost span { width: 50px; height: 50px; border-radius: 11px; border: 2px dashed rgba(255, 216, 138, 0.7); animation: wobble 2.2s ease-in-out infinite; }
+#rollHint .ghost span + span { animation-delay: -1.1s; }
+#rollHint em { font: italic 22px var(--font-display); color: var(--gold-hi); text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6); }
+
+/* ---------- messages on the board ---------- */
+#banner {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  padding: 14px 34px; border-radius: 40px; white-space: nowrap;
+  font: 34px var(--font-display); color: var(--text);
+  background: linear-gradient(180deg, rgba(40, 28, 20, 0.92), rgba(20, 13, 10, 0.92));
+  border: 1px solid rgba(231, 184, 92, 0.5);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 30px rgba(231, 184, 92, 0.2);
+  opacity: 0; pointer-events: none; z-index: 900;
+}
+#toast {
+  position: absolute; left: 50%; top: 14px; transform: translate(-50%, -20px);
+  padding: 8px 20px; border-radius: 20px; font-size: 22px; white-space: nowrap;
+  background: rgba(20, 13, 10, 0.9); border: 1px solid var(--line);
+  opacity: 0; pointer-events: none; z-index: 900;
+  transition: opacity var(--t-med) var(--ease-out), transform var(--t-med) var(--ease-spring);
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- overlays ---------- */
+.overlay {
+  position: fixed; inset: 0; z-index: 50;
+  display: grid; place-items: center; padding: 16px;
+  background: rgba(10, 7, 5, 0.55);
+  opacity: 0; visibility: hidden;
+  transition: opacity var(--t-med) var(--ease-out), visibility 0s linear var(--t-med);
+}
+.overlay.show { opacity: 1; visibility: visible; transition: opacity var(--t-med) var(--ease-out); }
+.panel {
+  width: min(420px, 100%); max-height: calc(100dvh - 32px); overflow: auto;
+  padding: 26px 24px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #2c2119, #1b140f);
+  border: 1px solid rgba(231, 184, 92, 0.25);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transform: translateY(24px) scale(0.96);
+  transition: transform var(--t-slow) var(--ease-spring);
+  user-select: text; -webkit-user-select: text;
+}
+.overlay.show .panel { transform: none; }
+.panel h1, .panel h2 { font-family: var(--font-display); font-weight: 400; text-align: center; margin: 0; }
+.panel h1 { font-size: 3.2rem; letter-spacing: 0.08em; background: linear-gradient(180deg, var(--gold-hi), var(--gold)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.panel h2 { font-size: 1.8rem; margin-bottom: 16px; }
+.panel .sub { text-align: center; margin: 4px 0 22px; color: var(--text-dim); }
+
+.logo { display: flex; justify-content: center; gap: 14px; height: 70px; perspective: 400px; }
+.logo-die {
+  width: 54px; height: 54px; border-radius: 12px; padding: 8px;
+  background: radial-gradient(circle at 30% 25%, #fffdf7, #f1e6cf 60%, #d9c7a2);
+  display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.45);
+  animation: float 3.2s ease-in-out infinite;
+}
+.logo-die.a { transform: rotate(-12deg); }
+.logo-die.b { transform: rotate(10deg); animation-delay: -1.6s; margin-top: 12px; }
+.logo-die i { width: 9px; height: 9px; margin: auto; border-radius: 50%; background: #2a1411; }
+.logo-die.a i:nth-child(1) { grid-area: 1 / 1; } .logo-die.a i:nth-child(2) { grid-area: 1 / 3; }
+.logo-die.a i:nth-child(3) { grid-area: 2 / 2; background: #b43a28; }
+.logo-die.a i:nth-child(4) { grid-area: 3 / 1; } .logo-die.a i:nth-child(5) { grid-area: 3 / 3; }
+.logo-die.b i:nth-child(1) { grid-area: 1 / 3; } .logo-die.b i:nth-child(2) { grid-area: 2 / 2; } .logo-die.b i:nth-child(3) { grid-area: 3 / 1; }
+
+.field {
+  display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 12px; row-gap: 6px;
+  align-items: center; margin-bottom: 14px;
+}
+.field .token { grid-row: 1 / 3; }
+.field .lbl { font-size: 0.9rem; color: var(--text-dim); }
+.field .lbl small { opacity: 0.7; margin-left: 4px; }
+.field input {
+  width: 100%; height: 44px; padding: 0 14px; border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3); border: 1px solid var(--line); color: var(--text);
+  font: 1.1rem var(--font-display);
+  transition: border-color var(--t-med) var(--ease-out), box-shadow var(--t-med) var(--ease-out);
+  user-select: text;
+}
+.field input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(231, 184, 92, 0.2); outline: none; }
+.chips { border: 0; padding: 0; margin: 6px 0 20px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.chips legend { float: left; margin-right: 8px; color: var(--text-dim); font-size: 0.9rem; }
+.chips button {
+  flex: 1; min-width: 40px; height: 40px; border-radius: 10px; cursor: pointer;
+  background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); font-weight: 600;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out);
+}
+.chips button.on { background: var(--gold); color: #2a1a0e; border-color: transparent; transform: translateY(-2px); }
+#setupForm .btn + .btn { margin-top: 10px; }
+
+.menu .btn + .btn, .menu .btn + .toggle, .menu .toggle + .toggle, .menu .toggle + .btn { margin-top: 10px; }
+.toggle { display: flex; align-items: center; gap: 12px; padding: 8px 4px; cursor: pointer; }
+.toggle input { position: absolute; opacity: 0; }
+.toggle .sw { width: 44px; height: 26px; border-radius: 13px; background: rgba(255, 255, 255, 0.12); position: relative; transition: background var(--t-med) var(--ease-out); flex: none; }
+.toggle .sw::after { content: ""; position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--text); transition: transform var(--t-med) var(--ease-spring); }
+.toggle input:checked + .sw { background: var(--gold); }
+.toggle input:checked + .sw::after { transform: translateX(18px); }
+.toggle input:focus-visible + .sw { outline: 2px solid var(--gold-hi); outline-offset: 2px; }
+
+.rules { width: min(560px, 100%); }
+.rules-body { font-size: 0.95rem; line-height: 1.5; color: rgba(243, 233, 210, 0.85); margin-bottom: 18px; }
+.rules-body p { margin: 0 0 10px; }
+.rules-body h3 { font-family: var(--font-display); font-weight: 400; color: var(--gold-hi); margin: 18px 0 8px; }
+kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.07); }
+
+.over { text-align: center; }
+.trophy { width: 84px; height: 84px; margin: 0 auto 10px; border-radius: 50%; display: grid; place-items: center; background: radial-gradient(circle, rgba(231, 184, 92, 0.25), transparent 70%); }
+.trophy svg { width: 56px; height: 56px; fill: none; stroke: var(--gold-hi); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.overlay.show .trophy svg { animation: trophy 900ms var(--ease-spring) both; }
+.over .kind { margin: 6px 0 18px; color: var(--gold-hi); font-size: 1.1rem; letter-spacing: 0.04em; }
+.over .final { display: flex; align-items: center; justify-content: center; gap: 12px; font-family: var(--font-display); }
+.over .final .side { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.over .final .n { max-width: 7em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
+.over .final b { font-size: 2.6rem; font-weight: 400; font-variant-numeric: tabular-nums; display: inline-block; }
+.over .final b.bump { animation: bump var(--t-slow) var(--ease-spring); color: var(--gold-hi); }
+.over .final .token { width: 26px; height: 26px; }
+.over .target { color: var(--text-dim); margin: 6px 0 20px; font-size: 0.9rem; }
+.over .row { display: flex; gap: 10px; }
+.over .row .btn.ghost { flex: 0 0 auto; }
+
+#confetti { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 60; }
+
+/* ---------- keyframes ---------- */
+@keyframes breathe { 50% { box-shadow: 0 0 0 1.5px var(--gold-hi), 0 0 36px var(--gold-glow); } }
+@keyframes pulse { 50% { box-shadow: 0 6px 28px rgba(231, 184, 92, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.6); transform: translateY(-1px); } }
+@keyframes ring { 50% { opacity: 0.95; } }
+@keyframes glow { 50% { opacity: 0.45; } }
+@keyframes spotIn { from { scale: 0.4; opacity: 0; } }
+@keyframes spin { to { rotate: 360deg; } }
+@keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.5); } 100% { transform: scale(1); } }
+@keyframes swapIn { from { opacity: 0; transform: translateY(6px); } }
+@keyframes wobble { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(6deg) translateY(-4px); } }
+@keyframes float { 50% { translate: 0 -6px; } }
+@keyframes trophy { from { transform: scale(0.3) rotate(-20deg); opacity: 0; } }
+
+/* small landscape screens (phones on their side) */
+@media (min-aspect-ratio: 5/4) and (max-height: 520px) {
+  #app { padding: 10px; gap: 8px 12px; grid-template-columns: 180px minmax(0, 1fr); }
+  .player { padding: 8px 10px; gap: 8px; }
+  .player .token { width: 24px; height: 24px; }
+  .player .name { font-size: 1rem; }
+  .player .score { font-size: 1.5rem; min-width: 0; }
+  .player .meta { font-size: 0.74rem; white-space: nowrap; }
+  .player .offbar { display: none; }
+  .btn { height: 40px; padding: 0 10px; }
+  .btn.icon { width: 40px; }
+  #undoBtn span { display: none; }
+  .controls .match { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+}
+
+</style>
+</head>
+<body>
+<div id="app" aria-hidden="true">
+  <section class="player" id="card1" data-p="1">
+    <div class="token dark" aria-hidden="true"></div>
+    <div class="who">
+      <div class="name"></div>
+      <div class="meta"><span class="pips"></span><span class="offbar"><i></i></span></div>
+    </div>
+    <div class="score" aria-label="точки"><b>0</b></div>
+  </section>
+
+  <div id="boardWrap">
+    <div id="boardBox">
+      <div id="board">
+        <svg id="boardArt" viewBox="0 0 1000 780" width="1000" height="780" aria-hidden="true"></svg>
+        <div id="hls"></div>
+        <div id="checkers"></div>
+        <div id="dice"></div>
+        <div id="rollHint" aria-hidden="true"><div class="ghost"><span></span><span></span></div><em>Хвърли</em></div>
+        <div id="banner" aria-hidden="true"></div>
+        <div id="toast" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+
+  <section class="player" id="card0" data-p="0">
+    <div class="token light" aria-hidden="true"></div>
+    <div class="who">
+      <div class="name"></div>
+      <div class="meta"><span class="pips"></span><span class="offbar"><i></i></span></div>
+    </div>
+    <div class="score" aria-label="точки"><b>0</b></div>
+  </section>
+
+  <nav class="controls">
+    <div class="match" id="matchInfo"></div>
+    <div class="buttons">
+      <button class="btn ghost" id="undoBtn" title="Назад (Ctrl+Z)"><svg viewBox="0 0 24 24"><path d="M9 7 4 12l5 5M4.5 12H15a5 5 0 0 1 0 10h-2"/></svg><span>Назад</span></button>
+      <button class="btn primary" id="mainBtn"><span></span></button>
+      <button class="btn ghost icon" id="menuBtn" title="Меню" aria-label="Меню"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    </div>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
+  </nav>
+</div>
+
+<!-- start screen -->
+<div class="overlay show" id="setup" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
+  <div class="panel setup">
+    <div class="logo" aria-hidden="true">
+      <div class="logo-die a"><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="logo-die b"><i></i><i></i><i></i></div>
+    </div>
+    <h1 id="setupTitle">Табла</h1>
+    <p class="sub">за двама на едно устройство</p>
+    <form id="setupForm" autocomplete="off">
+      <label class="field">
+        <span class="token light" aria-hidden="true"></span>
+        <span class="lbl">Светли пулове <small>прибират се долу вдясно</small></span>
+        <input id="name0" maxlength="16" placeholder="Играч 1" spellcheck="false">
+      </label>
+      <label class="field">
+        <span class="token dark" aria-hidden="true"></span>
+        <span class="lbl">Тъмни пулове <small>прибират се горе вдясно</small></span>
+        <input id="name1" maxlength="16" placeholder="Играч 2" spellcheck="false">
+      </label>
+      <fieldset class="chips" id="lengthChips">
+        <legend>Мач до</legend>
+        <button type="button" data-v="1">1</button>
+        <button type="button" data-v="3">3</button>
+        <button type="button" data-v="5" class="on">5</button>
+        <button type="button" data-v="7">7</button>
+        <button type="button" data-v="11">11</button>
+        <button type="button" data-v="0" title="Без край">∞</button>
+      </fieldset>
+      <button class="btn primary big" type="submit">Започни</button>
+      <button class="btn ghost big" type="button" id="resumeBtn" hidden>Продължи играта</button>
+    </form>
+  </div>
+</div>
+
+<!-- menu -->
+<div class="overlay" id="menu" role="dialog" aria-modal="true" aria-label="Меню">
+  <div class="panel menu">
+    <h2>Меню</h2>
+    <button class="btn ghost wide" data-act="close">Обратно към играта</button>
+    <button class="btn ghost wide" data-act="rules">Правила и управление</button>
+    <label class="toggle"><input type="checkbox" id="optSound"><span class="sw"></span>Звук</label>
+    <label class="toggle"><input type="checkbox" id="optAuto"><span class="sw"></span>Край на хода без „Готово“</label>
+    <button class="btn ghost wide danger" data-act="restart" data-confirm="Натисни пак, за да започнеш играта отначало">Играта отначало</button>
+    <button class="btn ghost wide danger" data-act="newmatch" data-confirm="Натисни пак — резултатът се губи">Нов мач</button>
+  </div>
+</div>
+
+<!-- rules -->
+<div class="overlay" id="rules" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
+  <div class="panel rules">
+    <h2 id="rulesTitle">Правила</h2>
+    <div class="rules-body">
+      <p><b>Цел.</b> Всеки играч обикаля с 15-те си пула дъската, прибира ги в своята четвърт (дома) и ги изкарва от дъската. Който изкара всичките първи, печели.</p>
+      <p><b>Посока.</b> Светлите вървят обратно на часовника и се прибират долу вдясно. Тъмните вървят по часовника и се прибират горе вдясно.</p>
+      <p><b>Начало.</b> Всеки хвърля по един зар. По-високият започва и играе двете хвърлени числа. При равни се хвърля отново.</p>
+      <p><b>Ход.</b> Всеки зар е отделен ход на един пул. При чифт числото се играе четири пъти. Трябва да изиграеш колкото може повече зарове. Ако може да се изиграе само единият, задължително е по-големият, когато е възможно.</p>
+      <p><b>Блокиране и удряне.</b> Не можеш да спреш на поле с два или повече чужди пула. Самотен чужд пул се удря и отива на бара.</p>
+      <p><b>Бар.</b> Докато имаш пул на бара, не можеш да местиш друг — първо го въвеждаш в дома на противника.</p>
+      <p><b>Изкарване.</b> Започва чак когато всичките ти пулове са в дома. Зарът изкарва пул от своето поле; по-голям зар изкарва от най-далечното поле, ако по-далече няма пулове.</p>
+      <p><b>Точки.</b> Обикновена победа — 1 точка. <b>Марс</b> (противникът не е изкарал нито един пул) — 2. <b>Бекгамон</b> (марс и противникът има пул на бара или в твоя дом) — 3.</p>
+      <h3>Управление</h3>
+      <p>Натисни пул, после светещото поле. Или го хвани и го пусни. Двоен клик мести пула с най-големия зар. Светещите полета показват и ходове с двата зара наведнъж.</p>
+      <p><kbd>Интервал</kbd> хвърляне / готово · <kbd>Ctrl</kbd>+<kbd>Z</kbd> назад · <kbd>Esc</kbd> отказ</p>
+      <p>„Назад“ връща всеки ход и всяко хвърляне, но заровете остават същите — не може да се хвърля наново.</p>
+    </div>
+    <button class="btn primary wide" data-act="close">Разбрах</button>
+  </div>
+</div>
+
+<!-- end of a game -->
+<div class="overlay" id="over" role="dialog" aria-modal="true" aria-labelledby="overTitle">
+  <div class="panel over">
+    <div class="trophy" aria-hidden="true">
+      <svg viewBox="0 0 64 64"><path d="M20 8h24v14a12 12 0 0 1-24 0zM20 12H10a8 8 0 0 0 10 12M44 12h10a8 8 0 0 1-10 12M32 34v10M22 54h20l-3-10H25z"/></svg>
+    </div>
+    <h2 id="overTitle"></h2>
+    <p class="kind" id="overKind"></p>
+    <div class="final">
+      <div class="side"><span class="token light"></span><span class="n" id="overName0"></span><b id="overScore0">0</b></div>
+      <div class="dash">:</div>
+      <div class="side"><b id="overScore1">0</b><span class="n" id="overName1"></span><span class="token dark"></span></div>
+    </div>
+    <p class="target" id="overTarget"></p>
+    <div class="row">
+      <button class="btn ghost" data-act="undo">Назад</button>
+      <button class="btn primary" data-act="next" id="overNext">Следваща игра</button>
+    </div>
+    <button class="btn link" data-act="newmatch" id="overNew" hidden>Нов мач с други имена</button>
+  </div>
+</div>
+
+<canvas id="confetti" aria-hidden="true"></canvas>
+
+<script>
+/*
+ * Rules of standard backgammon (обикновена табла), with no doubling cube.
+ * Pure: every function takes data and returns new data; nothing here touches
+ * the DOM, the clock or Math.random, so the rules can be tested in Node.
+ *
+ * Board: points[0..23] hold signed counts — positive for LIGHT (player 0),
+ * negative for DARK (player 1). LIGHT moves 23 → 0 and bears off below 0;
+ * DARK moves 0 → 23 and bears off above 23.
+ */
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.TablaEngine = api;
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  const LIGHT = 0;
+  const DARK = 1;
+  const BAR = 'bar';
+  const OFF = 'off';
+  const CHECKERS = 15;
+
+  const sign = (p) => (p === LIGHT ? 1 : -1);
+
+  function initialBoard() {
+    const points = new Array(24).fill(0);
+    points[23] = 2; points[12] = 5; points[7] = 3; points[5] = 5;
+    points[0] = -2; points[11] = -5; points[16] = -3; points[18] = -5;
+    return { points, bar: [0, 0], off: [0, 0] };
+  }
+
+  function cloneBoard(b) {
+    return { points: b.points.slice(), bar: b.bar.slice(), off: b.off.slice() };
+  }
+
+  function countAt(board, idx, p) {
+    const v = board.points[idx] * sign(p);
+    return v > 0 ? v : 0;
+  }
+
+  /** Distance of a point from bearing off, as the player counts it (1..24). */
+  function pipOf(p, idx) {
+    return p === LIGHT ? idx + 1 : 24 - idx;
+  }
+
+  function pipCount(board, p) {
+    let total = board.bar[p] * 25;
+    for (let i = 0; i < 24; i++) total += countAt(board, i, p) * pipOf(p, i);
+    return total;
+  }
+
+  function allHome(board, p) {
+    if (board.bar[p] > 0) return false;
+    for (let i = 0; i < 24; i++) {
+      if (countAt(board, i, p) && pipOf(p, i) > 6) return false;
+    }
+    return true;
+  }
+
+  function hasFartherThan(board, p, pip) {
+    for (let i = 0; i < 24; i++) {
+      if (countAt(board, i, p) && pipOf(p, i) > pip) return true;
+    }
+    return false;
+  }
+
+  /** A point is open unless the opponent holds two or more checkers on it. */
+  function isOpen(board, idx, p) {
+    return board.points[idx] * sign(p) >= -1;
+  }
+
+  function makeMove(board, p, from, to, die) {
+    const hit = to !== OFF && board.points[to] * sign(p) === -1;
+    return { from, to, die, hit };
+  }
+
+  /** Every single-checker move for one die, ignoring the whole-turn rules. */
+  function singleMoves(board, p, die) {
+    const res = [];
+    if (board.bar[p] > 0) {
+      const to = p === LIGHT ? 24 - die : die - 1;
+      if (isOpen(board, to, p)) res.push(makeMove(board, p, BAR, to, die));
+      return res;
+    }
+    const home = allHome(board, p);
+    for (let i = 0; i < 24; i++) {
+      if (!countAt(board, i, p)) continue;
+      const t = p === LIGHT ? i - die : i + die;
+      if (t >= 0 && t < 24) {
+        if (isOpen(board, t, p)) res.push(makeMove(board, p, i, t, die));
+      } else if (home) {
+        const pip = pipOf(p, i);
+        if (pip === die || (pip < die && !hasFartherThan(board, p, pip))) {
+          res.push(makeMove(board, p, i, OFF, die));
+        }
+      }
+    }
+    return res;
+  }
+
+  function applyMove(board, p, m) {
+    const b = cloneBoard(board);
+    const s = sign(p);
+    if (m.from === BAR) b.bar[p]--;
+    else b.points[m.from] -= s;
+    if (m.to === OFF) {
+      b.off[p]++;
+    } else {
+      if (b.points[m.to] * s === -1) {
+        b.points[m.to] = 0;
+        b.bar[1 - p]++;
+      }
+      b.points[m.to] += s;
+    }
+    return b;
+  }
+
+  function removeDie(dice, die) {
+    const i = dice.indexOf(die);
+    return dice.slice(0, i).concat(dice.slice(i + 1));
+  }
+
+  const uniq = (arr) => Array.from(new Set(arr));
+
+  /** How many of the remaining dice can still be played from here. */
+  function maxPlayable(board, p, dice, memo) {
+    if (dice.length === 0) return 0;
+    const key = board.points.join(',') + '|' + board.bar + '|' + board.off + '|' + dice.slice().sort().join('');
+    if (memo.has(key)) return memo.get(key);
+    let best = 0;
+    for (const die of uniq(dice)) {
+      for (const m of singleMoves(board, p, die)) {
+        const n = 1 + maxPlayable(applyMove(board, p, m), p, removeDie(dice, die), memo);
+        if (n > best) best = n;
+        if (best === dice.length) break;
+      }
+      if (best === dice.length) break;
+    }
+    memo.set(key, best);
+    return best;
+  }
+
+  /**
+   * Moves that may be played now with the dice still unused. Enforces the
+   * whole-turn rules: play as many dice as possible, and if only one of two
+   * different dice can be played, play the larger one when it can be.
+   */
+  function legalMoves(board, p, dice) {
+    if (!dice.length) return [];
+    const memo = new Map();
+    const scored = [];
+    let best = 0;
+    for (const die of uniq(dice)) {
+      for (const m of singleMoves(board, p, die)) {
+        const n = 1 + maxPlayable(applyMove(board, p, m), p, removeDie(dice, die), memo);
+        scored.push({ m, n });
+        if (n > best) best = n;
+      }
+    }
+    let moves = scored.filter((x) => x.n === best).map((x) => x.m);
+    if (best === 1 && dice.length === 2 && dice[0] !== dice[1]) {
+      const high = Math.max(dice[0], dice[1]);
+      if (moves.some((m) => m.die === high)) moves = moves.filter((m) => m.die === high);
+    }
+    const seen = new Set();
+    return moves.filter((m) => {
+      const k = m.from + '>' + m.to + ':' + m.die;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }
+
+  /**
+   * Every place the checker at `from` can reach this turn, each with the
+   * shortest chain of legal moves that gets it there (so one click can use
+   * both dice with one checker).
+   */
+  function destinations(board, p, dice, from) {
+    const result = new Map();
+    const queue = [{ board, dice, pos: from, path: [] }];
+    while (queue.length) {
+      const cur = queue.shift();
+      for (const m of legalMoves(cur.board, p, cur.dice)) {
+        if (m.from !== cur.pos) continue;
+        const path = cur.path.concat([m]);
+        const key = String(m.to);
+        if (!result.has(key)) result.set(key, path);
+        else if (result.get(key).length <= path.length) continue;
+        if (m.to !== OFF && cur.dice.length > 1) {
+          queue.push({ board: applyMove(cur.board, p, m), dice: removeDie(cur.dice, m.die), pos: m.to, path });
+        }
+      }
+    }
+    return result;
+  }
+
+  /** 1 = обикновена победа, 2 = марс, 3 = бекгамон (двоен марс). */
+  function gameResult(board) {
+    for (const winner of [LIGHT, DARK]) {
+      if (board.off[winner] < CHECKERS) continue;
+      const loser = 1 - winner;
+      if (board.off[loser] > 0) return { winner, points: 1, kind: 'single' };
+      let inWinnersHome = board.bar[loser] > 0;
+      for (let i = 0; i < 24; i++) {
+        if (countAt(board, i, loser) && pipOf(winner, i) <= 6) inWinnersHome = true;
+      }
+      return inWinnersHome
+        ? { winner, points: 3, kind: 'backgammon' }
+        : { winner, points: 2, kind: 'gammon' };
+    }
+    return null;
+  }
+
+  // ---------- game state ----------
+
+  function newMatch(names, matchTo) {
+    return {
+      players: [{ name: names[0] }, { name: names[1] }],
+      matchTo, // 0 = no limit
+      score: [0, 0],
+      gameNo: 0,
+      ...freshGame(),
+    };
+  }
+
+  function freshGame() {
+    return {
+      phase: 'opening', // opening | roll | move | gameover | matchover
+      board: initialBoard(),
+      turn: LIGHT,
+      dice: [],
+      remaining: [],
+      turnSeq: 0,
+      openingRoll: null,
+      result: null,
+    };
+  }
+
+  function nextGame(state) {
+    return { ...state, ...freshGame(), gameNo: state.gameNo + 1 };
+  }
+
+  /** Each player throws one die; the higher one starts with both numbers. */
+  function openingRoll(state, lightDie, darkDie) {
+    if (lightDie === darkDie) return { ...state, openingRoll: [lightDie, darkDie] };
+    const turn = lightDie > darkDie ? LIGHT : DARK;
+    const dice = turn === LIGHT ? [lightDie, darkDie] : [darkDie, lightDie];
+    return { ...state, openingRoll: [lightDie, darkDie], turn, phase: 'move', dice, remaining: dice.slice(), turnSeq: 1 };
+  }
+
+  function roll(state, a, b) {
+    const remaining = a === b ? [a, a, a, a] : [a, b];
+    return { ...state, phase: 'move', dice: [a, b], remaining };
+  }
+
+  function currentMoves(state) {
+    if (state.phase !== 'move') return [];
+    return legalMoves(state.board, state.turn, state.remaining);
+  }
+
+  function play(state, m) {
+    const board = applyMove(state.board, state.turn, m);
+    const next = { ...state, board, remaining: removeDie(state.remaining, m.die) };
+    const result = gameResult(board);
+    if (!result) return next;
+    const score = state.score.slice();
+    score[result.winner] += result.points;
+    const matchOver = state.matchTo > 0 && score[result.winner] >= state.matchTo;
+    return { ...next, remaining: [], score, result, phase: matchOver ? 'matchover' : 'gameover' };
+  }
+
+  function endTurn(state) {
+    return { ...state, phase: 'roll', turn: 1 - state.turn, dice: [], remaining: [], turnSeq: state.turnSeq + 1 };
+  }
+
+  return {
+    LIGHT, DARK, BAR, OFF, CHECKERS,
+    initialBoard, cloneBoard, countAt, pipOf, pipCount, allHome,
+    singleMoves, applyMove, legalMoves, destinations, gameResult,
+    newMatch, nextGame, openingRoll, roll, currentMoves, play, endTurn,
+  };
+});
+
+/* Every sound is synthesised on the spot — no audio files, nothing to download. */
+(function (root) {
+  'use strict';
+  let ctx = null;
+  let noise = null;
+  let enabled = true;
+
+  function ac() {
+    if (!enabled) return null;
+    if (!ctx) {
+      const C = root.AudioContext || root.webkitAudioContext;
+      if (!C) return null;
+      ctx = new C();
+      noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+      const data = noise.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    }
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+
+  /** A filtered burst of noise: the knock of wood on wood. */
+  function knock(c, when, freq, gain, dur, q = 4) {
+    const src = c.createBufferSource();
+    src.buffer = noise;
+    const bp = c.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = q;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.exponentialRampToValueAtTime(gain, when + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+    src.connect(bp).connect(g).connect(c.destination);
+    src.start(when, Math.random() * 0.5, dur + 0.05);
+  }
+
+  function tone(c, when, freq, gain, dur, type = 'sine', endFreq) {
+    const o = c.createOscillator();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, when);
+    if (endFreq) o.frequency.exponentialRampToValueAtTime(endFreq, when + dur);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.exponentialRampToValueAtTime(gain, when + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+    o.connect(g).connect(c.destination);
+    o.start(when);
+    o.stop(when + dur + 0.05);
+  }
+
+  root.TablaSound = {
+    get enabled() { return enabled; },
+    set enabled(v) { enabled = !!v; },
+    rattle(ms = 700) {
+      const c = ac(); if (!c) return;
+      const t = c.currentTime;
+      const n = 9;
+      for (let i = 0; i < n; i++) {
+        const at = t + (ms / 1000) * (i / n) * (0.85 + Math.random() * 0.3);
+        knock(c, at, 1800 + Math.random() * 2200, 0.18 * (1 - i / (n * 1.4)), 0.04);
+      }
+    },
+    land() {
+      const c = ac(); if (!c) return;
+      const t = c.currentTime;
+      knock(c, t, 900, 0.35, 0.07, 3);
+      knock(c, t + 0.06, 1300, 0.12, 0.05, 3);
+    },
+    checker() {
+      const c = ac(); if (!c) return;
+      const t = c.currentTime;
+      knock(c, t, 1500, 0.4, 0.05, 5);
+      tone(c, t, 220, 0.12, 0.08, 'sine', 140);
+    },
+    hit() {
+      const c = ac(); if (!c) return;
+      const t = c.currentTime;
+      knock(c, t, 1100, 0.6, 0.08, 3);
+      knock(c, t + 0.05, 2000, 0.25, 0.05, 4);
+      tone(c, t, 160, 0.2, 0.18, 'triangle', 90);
+    },
+    off() {
+      const c = ac(); if (!c) return;
+      const t = c.currentTime;
+      knock(c, t, 700, 0.2, 0.06, 2);
+      tone(c, t, 520, 0.08, 0.25, 'sine', 780);
+    },
+    tap() {
+      const c = ac(); if (!c) return;
+      tone(c, c.currentTime, 660, 0.05, 0.06, 'sine');
+    },
+    error() {
+      const c = ac(); if (!c) return;
+      const t = c.currentTime;
+      tone(c, t, 240, 0.08, 0.12, 'triangle');
+      tone(c, t + 0.1, 190, 0.08, 0.16, 'triangle');
+    },
+    win(big) {
+      const c = ac(); if (!c) return;
+      const t = c.currentTime;
+      const notes = big ? [523, 659, 784, 1047, 1319] : [523, 659, 784, 1047];
+      notes.forEach((f, i) => {
+        tone(c, t + i * 0.11, f, 0.12, 0.5, 'triangle');
+        tone(c, t + i * 0.11, f * 2, 0.03, 0.35, 'sine');
+      });
+    },
+  };
+})(typeof window !== 'undefined' ? window : this);
+
+/* Screen, input and animation. The rules live in engine.js; this file only
+ * asks the engine what is legal and shows it. */
+(function () {
+  'use strict';
+  const E = window.TablaEngine;
+  const Sound = window.TablaSound;
+  const { LIGHT, DARK, BAR, OFF } = E;
+
+  const $ = (s) => document.querySelector(s);
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const dur = (ms) => (reduced.matches ? 1 : ms);
+  const wait = (ms) => new Promise((r) => setTimeout(r, dur(ms)));
+  const EASE_OUT = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
+  const EASE_IN_OUT = 'cubic-bezier(0.45, 0, 0.25, 1)';
+  const STORE = 'tabla.v1';
+
+  // ---------- geometry (board units; the board is scaled to fit) ----------
+  const G = {
+    W: 1000, H: 780, TOP: 25, BOTTOM: 755, MID: 390, PW: 65, PH: 300, D: 58,
+    BAR_L: 415, BAR_R: 475, BAR_X: 445, TRAY_L: 890, TRAY_R: 975, TRAY_X: 932.5,
+    LEFT_L: 25, RIGHT_L: 475, RIGHT_R: 865,
+    SIDE_X: [670, 220], // where each player's dice land: light on the right half, dark on the left
+  };
+  const R = G.D / 2;
+  const KEYS = [...Array.from({ length: 24 }, (_, i) => 'p' + i), 'bar', 'off'];
+
+  function pointX(i) {
+    if (i < 6) return G.RIGHT_R - G.PW * (i + 0.5);
+    if (i < 12) return G.BAR_L - G.PW * (i - 6 + 0.5);
+    if (i < 18) return G.LEFT_L + G.PW * (i - 12 + 0.5);
+    return G.RIGHT_L + G.PW * (i - 18 + 0.5);
+  }
+  const isTop = (i) => i >= 12;
+
+  /** Where the i-th of n checkers in a stack sits. */
+  function slot(p, key, i, n) {
+    if (key === 'off') {
+      return { x: G.TRAY_X, y: p === LIGHT ? G.BOTTOM - 12 - i * 19 : G.TOP + 12 + i * 19 };
+    }
+    if (key === 'bar') {
+      const sp = n <= 1 ? G.D : Math.min(G.D, (G.PH - 30 - G.D) / (n - 1));
+      return { x: G.BAR_X, y: p === LIGHT ? G.MID + 36 + R + i * sp : G.MID - 36 - R - i * sp };
+    }
+    const idx = +key.slice(1);
+    const sp = n <= 5 ? G.D : (G.PH - G.D) / (n - 1);
+    return { x: pointX(idx), y: isTop(idx) ? G.TOP + R + i * sp : G.BOTTOM - R - i * sp };
+  }
+
+  function locAt(x, y) {
+    if (y < G.TOP - 10 || y > G.BOTTOM + 10) return null;
+    if (x >= G.TRAY_L - 10 && x <= G.TRAY_R + 10) return OFF;
+    if (x >= G.BAR_L && x < G.BAR_R) return BAR;
+    const top = y < G.MID;
+    if (x >= G.LEFT_L && x < G.BAR_L) {
+      const c = Math.floor((x - G.LEFT_L) / G.PW);
+      return top ? 12 + c : 11 - c;
+    }
+    if (x >= G.RIGHT_L && x < G.RIGHT_R) {
+      const c = Math.floor((x - G.RIGHT_L) / G.PW);
+      return top ? 18 + c : 5 - c;
+    }
+    return null;
+  }
+  const keyOf = (loc) => (typeof loc === 'number' ? 'p' + loc : loc);
+
+  // ---------- state ----------
+  let state = null;
+  let history = [];
+  let rollLog = {}; // dice already thrown for a turn: undo never re-rolls
+  let settings = { sound: true, autoDone: false };
+  let matchLength = 5;
+  let busy = false;
+  let selected = null; // { from, dests: Map<string, move[]> }
+  let movesNow = [];
+  let sources = new Set();
+  let drag = null;
+  let scale = 1;
+  let started = false; // nothing is saved until a match is started or resumed
+
+  // ---------- board art ----------
+  function buildBoardArt() {
+    const tri = [];
+    for (let i = 0; i < 24; i++) {
+      const x = pointX(i);
+      const top = isTop(i);
+      const y0 = top ? G.TOP : G.BOTTOM;
+      const y1 = top ? G.TOP + G.PH - 8 : G.BOTTOM - G.PH + 8;
+      const a = i % 2 === 0;
+      tri.push(`<polygon points="${x - 31},${y0} ${x + 31},${y0} ${x},${y1}" fill="url(#${a ? 'triA' : 'triB'}${top ? 't' : 'b'})" stroke="rgba(0,0,0,.25)" stroke-width="1"/>`);
+      tri.push(`<polygon points="${x - 22},${y0} ${x + 22},${y0} ${x},${top ? y1 - 40 : y1 + 40}" fill="none" stroke="${a ? 'rgba(90,40,20,.25)' : 'rgba(255,235,200,.14)'}" stroke-width="1.2"/>`);
+    }
+    const labels = [];
+    for (let i = 0; i < 24; i++) {
+      labels.push(`<text id="lbl${i}" x="${pointX(i)}" y="${isTop(i) ? 17 : 770}" text-anchor="middle"></text>`);
+    }
+    const field = (x) => `<rect x="${x}" y="${G.TOP}" width="390" height="730" rx="6" fill="url(#felt)"/>
+      <rect x="${x}" y="${G.TOP}" width="390" height="730" rx="6" fill="url(#vignette)"/>
+      <rect x="${x}" y="${G.TOP}" width="390" height="730" rx="6" filter="url(#feltGrain)" opacity=".5"/>`;
+    const hinge = (y) => `<rect x="${G.BAR_X - 13}" y="${y}" width="26" height="46" rx="4" fill="url(#brass)" stroke="rgba(0,0,0,.35)"/>
+      <circle cx="${G.BAR_X}" cy="${y + 10}" r="2.4" fill="rgba(60,40,10,.7)"/><circle cx="${G.BAR_X}" cy="${y + 36}" r="2.4" fill="rgba(60,40,10,.7)"/>`;
+    $('#boardArt').innerHTML = `
+      <defs>
+        <linearGradient id="wood" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#6d4428"/><stop offset=".5" stop-color="#553320"/><stop offset="1" stop-color="#3e2415"/>
+        </linearGradient>
+        <filter id="grain" x="0" y="0" width="100%" height="100%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.006 0.22" numOctaves="3" seed="7"/>
+          <feColorMatrix values="0 0 0 0 0.12  0 0 0 0 0.06  0 0 0 0 0.02  0 0 0 0.55 -0.05"/>
+          <feComposite in2="SourceGraphic" operator="in"/>
+        </filter>
+        <filter id="feltGrain" x="0" y="0" width="100%" height="100%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="3"/>
+          <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.22 0"/>
+          <feComposite in2="SourceGraphic" operator="in"/>
+        </filter>
+        <radialGradient id="felt" cx=".5" cy=".5" r=".75">
+          <stop offset="0" stop-color="#2c5443"/><stop offset="1" stop-color="#173428"/>
+        </radialGradient>
+        <radialGradient id="vignette" cx=".5" cy=".5" r=".7">
+          <stop offset=".6" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".35"/>
+        </radialGradient>
+        <linearGradient id="triAt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eadbb8"/><stop offset="1" stop-color="#cdb48a"/></linearGradient>
+        <linearGradient id="triAb" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#eadbb8"/><stop offset="1" stop-color="#cdb48a"/></linearGradient>
+        <linearGradient id="triBt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b85a3c"/><stop offset="1" stop-color="#86351f"/></linearGradient>
+        <linearGradient id="triBb" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#b85a3c"/><stop offset="1" stop-color="#86351f"/></linearGradient>
+        <linearGradient id="brass" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#8a6a2c"/><stop offset=".5" stop-color="#e8c878"/><stop offset="1" stop-color="#8a6a2c"/></linearGradient>
+        <linearGradient id="tray" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#1b100a"/><stop offset=".5" stop-color="#2a1a10"/><stop offset="1" stop-color="#1b100a"/></linearGradient>
+      </defs>
+      <rect width="1000" height="780" rx="22" fill="url(#wood)"/>
+      <rect width="1000" height="780" rx="22" filter="url(#grain)"/>
+      <rect x="3" y="3" width="994" height="774" rx="20" fill="none" stroke="rgba(255,220,170,.18)" stroke-width="2"/>
+      ${field(G.LEFT_L)}${field(G.RIGHT_L)}
+      <g>${tri.join('')}</g>
+      <rect x="${G.LEFT_L}" y="${G.TOP}" width="390" height="730" rx="6" fill="none" stroke="rgba(0,0,0,.55)" stroke-width="4"/>
+      <rect x="${G.RIGHT_L}" y="${G.TOP}" width="390" height="730" rx="6" fill="none" stroke="rgba(0,0,0,.55)" stroke-width="4"/>
+      <rect x="${G.BAR_L + 6}" y="${G.TOP}" width="${G.BAR_R - G.BAR_L - 12}" height="730" rx="8" fill="rgba(0,0,0,.18)"/>
+      ${hinge(150)}${hinge(584)}
+      <rect x="${G.TRAY_L}" y="${G.TOP}" width="85" height="730" rx="10" fill="url(#tray)" stroke="rgba(0,0,0,.6)" stroke-width="3"/>
+      <rect x="${G.TRAY_L}" y="${G.MID - 3}" width="85" height="6" fill="url(#wood)"/>
+      <g class="labels" font-family="system-ui, sans-serif" font-size="12" font-weight="600" fill="rgba(255,236,200,.55)">${labels.join('')}</g>`;
+  }
+
+  function buildHighlights() {
+    const box = $('#hls');
+    for (let i = 0; i < 24; i++) {
+      const d = document.createElement('div');
+      d.className = 'hl pt ' + (isTop(i) ? 'top' : 'bottom');
+      d.style.left = pointX(i) - G.PW / 2 + 'px';
+      d.style.top = (isTop(i) ? G.TOP : G.BOTTOM - G.PH) + 'px';
+      d.dataset.key = String(i);
+      box.appendChild(d);
+    }
+    for (const p of [LIGHT, DARK]) {
+      const d = document.createElement('div');
+      d.className = 'hl tray';
+      d.style.left = G.TRAY_L + 'px';
+      d.style.top = (p === LIGHT ? G.MID : G.TOP) + 'px';
+      d.dataset.key = 'off' + p;
+      box.appendChild(d);
+    }
+  }
+  const hlFor = (loc) => document.querySelector(`.hl[data-key="${loc === OFF ? 'off' + state.turn : loc}"]`);
+
+  // ---------- checkers ----------
+  const stacks = [new Map(), new Map()];
+  const tr = (pos) => `translate(${pos.x - R}px, ${pos.y - R}px)`;
+
+  function buildCheckers() {
+    const box = $('#checkers');
+    for (const p of [LIGHT, DARK]) {
+      for (const key of KEYS) stacks[p].set(key, []);
+      for (let n = 0; n < E.CHECKERS; n++) {
+        const el = document.createElement('div');
+        el.className = 'checker slab ' + (p === LIGHT ? 'light' : 'dark');
+        el.innerHTML = '<div class="lift"><div class="face"></div><div class="count"></div></div>';
+        el._p = p;
+        box.appendChild(el);
+        stacks[p].get('off').push(el);
+      }
+    }
+  }
+
+  function targetCount(board, p, key) {
+    if (key === 'bar') return board.bar[p];
+    if (key === 'off') return board.off[p];
+    return E.countAt(board, +key.slice(1), p);
+  }
+
+  function place(el, pos) {
+    el._x = pos.x; el._y = pos.y;
+    el.style.transform = tr(pos);
+  }
+
+  function flyTo(el, pos, { delay = 0, onLand, fromDrag = false } = {}) {
+    const from = { x: el._x, y: el._y };
+    place(el, pos);
+    const dist = Math.hypot(pos.x - from.x, pos.y - from.y);
+    const d = dur(Math.min(760, 300 + dist * 0.42));
+    const dl = dur(delay);
+    el.style.zIndex = String(600 + Math.round(delay / 10));
+    if (!fromDrag) setTimeout(() => el.classList.add('lifted'), dl);
+    setTimeout(() => el.classList.remove('lifted', 'dragging'), dl + d * 0.72);
+    const a = el.animate([{ transform: tr(from) }, { transform: tr(pos) }], { duration: d, delay: dl, easing: EASE_IN_OUT, fill: 'backwards' });
+    return a.finished.catch(() => {}).then(() => {
+      el.style.zIndex = String(el._z);
+      if (onLand) onLand(el);
+    });
+  }
+
+  function slideTo(el, pos) {
+    const from = { x: el._x, y: el._y };
+    place(el, pos);
+    return el.animate([{ transform: tr(from) }, { transform: tr(pos) }], { duration: dur(220), easing: EASE_OUT }).finished.catch(() => {});
+  }
+
+  /**
+   * Makes the checkers on screen match `board`. Only the checkers that must
+   * change place move, so one call animates a move, a hit, an undo of several
+   * moves or a whole new game alike.
+   */
+  function reconcile(board, { animate = true, mover = null, hitDelay = 0, stagger = 0, dragged = null, onLand } = {}) {
+    const moved = new Set();
+    for (const p of [LIGHT, DARK]) {
+      const surplus = [];
+      for (const key of KEYS) {
+        const arr = stacks[p].get(key);
+        const t = targetCount(board, p, key);
+        while (arr.length > t) surplus.push(arr.pop());
+      }
+      for (const key of KEYS) {
+        const arr = stacks[p].get(key);
+        const t = targetCount(board, p, key);
+        while (arr.length < t) {
+          const el = surplus.shift();
+          arr.push(el);
+          moved.add(el);
+        }
+      }
+    }
+    const jobs = [];
+    let order = 0;
+    for (const p of [LIGHT, DARK]) {
+      for (const key of KEYS) {
+        const arr = stacks[p].get(key);
+        arr.forEach((el, i) => {
+          const pos = slot(p, key, i, arr.length);
+          el._z = 10 + i;
+          const showCount = key !== 'off' && i === arr.length - 1 && arr.length > 5;
+          el.querySelector('.count').textContent = showCount ? String(arr.length) : '';
+          el.classList.toggle('show-count', showCount);
+          if (key !== 'off') el.classList.remove('slab');
+          const toOff = key === 'off';
+          if (!animate || el._x === undefined) {
+            place(el, pos);
+            el.style.zIndex = String(el._z);
+            el.classList.toggle('slab', toOff);
+            return;
+          }
+          if (moved.has(el)) {
+            const delay = stagger ? order++ * stagger : mover !== null && el._p !== mover ? hitDelay : 0;
+            jobs.push(flyTo(el, pos, {
+              delay,
+              fromDrag: el === dragged,
+              onLand: (c) => { c.classList.toggle('slab', toOff); if (onLand) onLand(c); },
+            }));
+          } else {
+            el.style.zIndex = String(el._z);
+            if (el._x !== pos.x || el._y !== pos.y) jobs.push(slideTo(el, pos));
+          }
+        });
+      }
+    }
+    return Promise.all(jobs);
+  }
+
+  const topChecker = (p, loc) => {
+    const arr = stacks[p].get(keyOf(loc));
+    return arr[arr.length - 1];
+  };
+
+  // ---------- dice ----------
+  const diceEls = [];
+  const PIPS = {
+    1: ['2/2'], 2: ['1/1', '3/3'], 3: ['1/1', '2/2', '3/3'], 4: ['1/1', '1/3', '3/1', '3/3'],
+    5: ['1/1', '1/3', '2/2', '3/1', '3/3'], 6: ['1/1', '2/1', '3/1', '1/3', '2/3', '3/3'],
+  };
+  const FACE_ROT = { 1: [0, 0], 2: [0, -90], 3: [-90, 0], 4: [90, 0], 5: [0, 90], 6: [0, 180] };
+  const cubeTr = (v, tilt, sx = 0, sy = 0, sz = 0) => `rotateZ(${tilt + sz}deg) rotateX(${FACE_ROT[v][0] + sx}deg) rotateY(${FACE_ROT[v][1] + sy}deg)`;
+  const dieTr = (x, y, s = 1) => `translate(${x - 28}px, ${y - 28}px) scale(${s})`;
+
+  function buildDice() {
+    const box = $('#dice');
+    for (let i = 0; i < 4; i++) {
+      const el = document.createElement('div');
+      el.className = 'die';
+      const faces = [1, 2, 3, 4, 5, 6].map((n) =>
+        `<div class="f f${n}">${PIPS[n].map((a) => `<i style="grid-area:${a.replace('/', ' / ')}"></i>`).join('')}</div>`).join('');
+      el.innerHTML = `<div class="shadow"></div><div class="scale"><div class="cube">${faces}</div></div>`;
+      el._cube = el.querySelector('.cube');
+      el._shown = false;
+      box.appendChild(el);
+      diceEls.push(el);
+    }
+  }
+
+  function diceLayout(st) {
+    if (st.phase === 'opening') {
+      if (!st.openingRoll) return [];
+      return [
+        { v: st.openingRoll[0], x: G.SIDE_X[LIGHT], y: G.MID, from: LIGHT },
+        { v: st.openingRoll[1], x: G.SIDE_X[DARK], y: G.MID, from: DARK },
+      ];
+    }
+    if (!st.dice.length || st.phase === 'roll') return [];
+    const [a, b] = st.dice;
+    const cx = G.SIDE_X[st.turn];
+    if (a === b) {
+      const usedN = 4 - st.remaining.length;
+      return [0, 1, 2, 3].map((i) => ({ v: a, x: cx - 108 + i * 72, y: G.MID, used: i < usedN }));
+    }
+    return [a, b].map((v, i) => ({ v, x: cx - 38 + i * 76, y: G.MID, used: !st.remaining.includes(v) }));
+  }
+
+  /** Pairs specs with dice already showing the same number, so a die glides instead of swapping. */
+  function assignDice(specs) {
+    const free = diceEls.slice();
+    const out = new Array(specs.length);
+    specs.forEach((s, i) => {
+      const k = free.findIndex((el) => el._shown && el._v === s.v);
+      if (k >= 0) out[i] = free.splice(k, 1)[0];
+    });
+    specs.forEach((s, i) => { if (!out[i]) out[i] = free.shift(); });
+    return { pairs: specs.map((s, i) => [s, out[i]]), unused: free };
+  }
+
+  function setDie(el, s) {
+    el._v = s.v; el._x = s.x; el._y = s.y;
+    el.style.transform = dieTr(s.x, s.y);
+    el._cube.style.transform = cubeTr(s.v, el._tilt);
+    el.classList.toggle('used', !!s.used);
+  }
+
+  function hideDie(el) {
+    if (!el._shown) return;
+    el._shown = false;
+    el.style.opacity = '0';
+    el.animate([{ opacity: 1, transform: dieTr(el._x, el._y) }, { opacity: 0, transform: dieTr(el._x, el._y, 0.7) }], { duration: dur(260), easing: EASE_OUT });
+  }
+
+  /** Brings the dice on screen in line with the state, without a throw. */
+  function syncDice() {
+    const { pairs, unused } = assignDice(diceLayout(state));
+    unused.forEach(hideDie);
+    for (const [s, el] of pairs) {
+      if (!el._shown) {
+        el._tilt = Math.random() * 20 - 10;
+        setDie(el, s);
+        el._shown = true;
+        el.style.opacity = '1';
+        el.animate([{ opacity: 0, transform: dieTr(s.x, s.y, 0.5) }, { opacity: 1, transform: dieTr(s.x, s.y) }], { duration: dur(320), easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)' });
+      } else if (el._x !== s.x || el._y !== s.y || el._v !== s.v) {
+        const from = dieTr(el._x, el._y);
+        setDie(el, s);
+        el.animate([{ transform: from }, { transform: dieTr(s.x, s.y) }], { duration: dur(420), easing: EASE_IN_OUT });
+      } else {
+        el.classList.toggle('used', !!s.used);
+      }
+    }
+  }
+
+  /** The throw: dice fly in from the thrower's edge, bounce and tumble to their numbers. */
+  function throwDice(specs, extraFrom) {
+    diceEls.forEach(hideDie);
+    const jobs = [];
+    const D = dur(950);
+    specs.forEach((s, i) => {
+      const el = diceEls[i];
+      el._tilt = Math.random() * 24 - 12;
+      setDie(el, s);
+      el._shown = true;
+      el.style.opacity = '1';
+      if (s.extra) {
+        // the second pair of a double appears once the first two have landed
+        jobs.push(el.animate([
+          { opacity: 0, transform: dieTr(s.x, s.y, 0.3) },
+          { opacity: 1, transform: dieTr(s.x, s.y, 1.15), offset: 0.6 },
+          { opacity: 1, transform: dieTr(s.x, s.y) },
+        ], { duration: dur(380), delay: D + dur(90 * (i - 1)), easing: EASE_OUT, fill: 'backwards' }).finished.catch(() => {}));
+        return;
+      }
+      const from = s.from !== undefined ? s.from : extraFrom;
+      const dir = from === LIGHT ? -1 : 1; // light throws upward from the bottom edge
+      const sx = s.x + (Math.random() * 140 - 70);
+      const sy = from === LIGHT ? G.BOTTOM + 30 : G.TOP - 30;
+      const ox = s.x + (Math.random() * 30 - 15);
+      const oy = s.y + dir * 34;
+      jobs.push(el.animate([
+        { opacity: 0, transform: dieTr(sx, sy, 0.8) },
+        { opacity: 1, transform: dieTr((sx + s.x) / 2, (sy + s.y) / 2, 1.35), offset: 0.3 },
+        { transform: dieTr(ox, oy, 1), offset: 0.58 },
+        { transform: dieTr(s.x, s.y - dir * 6, 1.1), offset: 0.76 },
+        { transform: dieTr(s.x, s.y, 1) },
+      ], { duration: D, easing: 'cubic-bezier(0.25, 0.6, 0.3, 1)' }).finished.catch(() => {}));
+      const spinX = -(720 + Math.floor(Math.random() * 3) * 90);
+      const spinY = -(540 + Math.floor(Math.random() * 3) * 90);
+      const spinZ = Math.random() < 0.5 ? -270 : 270;
+      el._cube.animate([
+        { transform: cubeTr(s.v, el._tilt, spinX, spinY, spinZ) },
+        { transform: cubeTr(s.v, el._tilt) },
+      ], { duration: D, easing: 'cubic-bezier(0.15, 0.55, 0.25, 1)' });
+    });
+    Sound.rattle(D * 0.6);
+    setTimeout(() => Sound.land(), D * 0.58);
+    return Promise.all(jobs);
+  }
+
+  function randomDie() {
+    const buf = new Uint8Array(1);
+    for (;;) {
+      crypto.getRandomValues(buf);
+      if (buf[0] < 252) return (buf[0] % 6) + 1; // 252 = 6 * 42: no bias
+    }
+  }
+
+  // ---------- interface updates ----------
+  const cards = [$('#card0'), $('#card1')];
+  let shownScore = [null, null];
+
+  function updateCards() {
+    for (const p of [LIGHT, DARK]) {
+      const c = cards[p];
+      c.querySelector('.name').textContent = state.players[p].name;
+      c.querySelector('.pips').textContent = 'остават ' + E.pipCount(state.board, p);
+      c.querySelector('.offbar i').style.transform = `scaleX(${state.board.off[p] / E.CHECKERS})`;
+      const b = c.querySelector('.score b');
+      if (shownScore[p] !== state.score[p]) {
+        b.textContent = String(state.score[p]);
+        if (shownScore[p] !== null && state.score[p] > shownScore[p]) {
+          b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump');
+        }
+        shownScore[p] = state.score[p];
+      }
+      const active = (state.phase === 'roll' || state.phase === 'move') && state.turn === p;
+      c.classList.toggle('active', active);
+    }
+    $('#matchInfo').textContent = (state.matchTo ? `Мач до ${state.matchTo} · ` : '') + `игра ${state.gameNo + 1}`;
+  }
+
+  function updateLabels() {
+    const view = state.phase === 'opening' ? LIGHT : state.turn;
+    for (let i = 0; i < 24; i++) document.getElementById('lbl' + i).textContent = E.pipOf(view, i);
+  }
+
+  const turnDone = () => state.phase === 'move' && (!state.remaining.length || !movesNow.length);
+
+  function plural(n) { return n === 1 ? 'ход' : 'хода'; }
+
+  function updateControls() {
+    const name = state.players[state.turn].name;
+    let label = 'Готово';
+    let enabled = false;
+    let pulse = false;
+    let status = '';
+    switch (state.phase) {
+      case 'opening':
+        label = state.openingRoll ? 'Хвърли пак' : 'Хвърли за начало';
+        enabled = pulse = true;
+        status = state.openingRoll ? 'Равни зарове — хвърлете отново' : 'Всеки хвърля по един зар — по-високият започва';
+        break;
+      case 'roll':
+        label = 'Хвърли';
+        enabled = pulse = true;
+        status = `${name} е на ход`;
+        break;
+      case 'move':
+        enabled = turnDone();
+        pulse = enabled;
+        if (!movesNow.length && state.remaining.length) status = `${name}: няма възможен ход`;
+        else if (!state.remaining.length) status = `${name}: натисни „Готово“`;
+        else {
+          const r = state.remaining;
+          status = r.length > 2 ? `${name}: ${r.length} ${plural(r.length)} по ${r[0]}` : `${name} играе ${r.join(' и ')}`;
+        }
+        break;
+      case 'gameover':
+        label = 'Следваща игра'; enabled = true;
+        break;
+      case 'matchover':
+        label = 'Реванш'; enabled = true;
+        break;
+    }
+    const btn = $('#mainBtn');
+    const span = btn.querySelector('span');
+    if (span.textContent !== label) {
+      span.textContent = label;
+      span.classList.remove('swap'); void span.offsetWidth; span.classList.add('swap');
+    }
+    btn.disabled = busy || !enabled;
+    btn.classList.toggle('pulse', pulse);
+    $('#undoBtn').disabled = busy || !history.length;
+    $('#status').textContent = status;
+  }
+
+  function updateHighlights() {
+    document.querySelectorAll('.checker.movable, .checker.selected').forEach((el) => el.classList.remove('movable', 'selected'));
+    document.querySelectorAll('.hl.on').forEach((el) => el.classList.remove('on', 'hover'));
+    document.querySelectorAll('.spot').forEach((el) => el.remove());
+    if (busy || state.phase !== 'move') return;
+    for (const src of sources) {
+      const el = topChecker(state.turn, src);
+      if (el) el.classList.add(selected && selected.from === src ? 'selected' : 'movable');
+    }
+    if (selected) {
+      for (const k of selected.dests.keys()) {
+        const loc = k === OFF ? OFF : +k;
+        const h = hlFor(loc);
+        if (h) h.classList.add('on');
+        addSpot(loc);
+      }
+    }
+  }
+
+  /** A dashed ring exactly where the selected checker would land. */
+  function addSpot(loc) {
+    const p = state.turn;
+    const key = keyOf(loc);
+    const arr = stacks[p].get(key);
+    const pos = slot(p, key, arr.length, arr.length + 1);
+    const d = document.createElement('div');
+    d.className = 'spot' + (loc === OFF ? ' tray' : '');
+    d.dataset.loc = String(loc);
+    d.style.left = pos.x - R + 'px';
+    d.style.top = pos.y - (loc === OFF ? 10 : R) + 'px';
+    $('#hls').appendChild(d);
+  }
+
+  function updateRollHint() {
+    const h = $('#rollHint');
+    const show = !busy && (state.phase === 'roll' || (state.phase === 'opening' && !state.openingRoll));
+    if (show) {
+      const x = state.phase === 'opening' ? (G.RIGHT_L + G.RIGHT_R) / 2 : G.SIDE_X[state.turn];
+      h.style.left = x + 'px';
+      h.style.top = G.MID + 'px';
+    }
+    h.classList.toggle('show', show);
+  }
+
+  function refresh() {
+    movesNow = E.currentMoves(state);
+    sources = new Set(movesNow.map((m) => m.from));
+    if (selected && !sources.has(selected.from)) selected = null;
+    updateCards();
+    updateLabels();
+    updateControls();
+    updateHighlights();
+    updateRollHint();
+    save();
+  }
+
+  // ---------- messages ----------
+  function banner(text, ms = 1300) {
+    const b = $('#banner');
+    b.textContent = text;
+    b.getAnimations().forEach((a) => a.cancel());
+    b.animate([
+      { opacity: 0, transform: 'translate(-50%, -50%) scale(0.85)' },
+      { opacity: 1, transform: 'translate(-50%, -50%) scale(1)', offset: 0.18 },
+      { opacity: 1, transform: 'translate(-50%, -50%) scale(1)', offset: 0.8 },
+      { opacity: 0, transform: 'translate(-50%, -50%) scale(1.04)' },
+    ], { duration: reduced.matches ? ms : ms, easing: EASE_OUT });
+  }
+
+  let toastTimer = 0;
+  function toast(text, ms = 1800) {
+    const t = $('#toast');
+    t.textContent = text;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+  }
+
+  // ---------- actions ----------
+  function pushHistory() {
+    history.push(state);
+    if (history.length > 600) history.shift();
+  }
+
+  async function run(fn) {
+    if (busy) return;
+    busy = true;
+    selected = null;
+    refresh();
+    try { await fn(); } finally { busy = false; refresh(); }
+  }
+
+  function actRoll() {
+    if (state.phase === 'opening') return run(openingThrow);
+    if (state.phase !== 'roll') return;
+    return run(async () => {
+      pushHistory();
+      const key = `${state.gameNo}:${state.turnSeq}`;
+      const pair = rollLog[key] || (rollLog[key] = [randomDie(), randomDie()]);
+      state = E.roll(state, pair[0], pair[1]);
+      const layout = diceLayout(state);
+      const specs = layout.map((s, i) => ({ ...s, used: false, extra: i >= 2 }));
+      await throwDice(specs, state.turn);
+      syncDice();
+      afterRoll();
+    });
+  }
+
+  async function openingThrow() {
+    const key = `${state.gameNo}:0`;
+    const pair = rollLog[key] || [randomDie(), randomDie()];
+    const before = state;
+    state = E.openingRoll(state, pair[0], pair[1]);
+    await throwDice([
+      { v: pair[0], x: G.SIDE_X[LIGHT], y: G.MID, from: LIGHT },
+      { v: pair[1], x: G.SIDE_X[DARK], y: G.MID, from: DARK },
+    ]);
+    if (state.phase === 'opening') {
+      toast('Равни зарове — хвърлете отново');
+      return;
+    }
+    rollLog[key] = pair;
+    history.push(before);
+    await wait(350);
+    banner(`${state.players[state.turn].name} започва`);
+    await wait(900);
+    syncDice();
+    await wait(300);
+    afterRoll();
+  }
+
+  function afterRoll() {
+    movesNow = E.currentMoves(state);
+    if (!movesNow.length) {
+      toast('Няма възможен ход');
+      Sound.error();
+      scheduleAutoDone(1500);
+    }
+  }
+
+  let autoTimer = 0;
+  function scheduleAutoDone(ms) {
+    clearTimeout(autoTimer);
+    if (!settings.autoDone) return;
+    const at = state;
+    autoTimer = setTimeout(() => { if (state === at && !busy) actDone(); }, ms);
+  }
+
+  function actMove(path, dragged = null) {
+    return run(async () => {
+      pushHistory();
+      const mover = state.turn;
+      for (let k = 0; k < path.length; k++) {
+        const m = path[k];
+        state = E.play(state, m);
+        syncDice();
+        if (m.hit) setTimeout(() => Sound.hit(), dur(330));
+        await reconcile(state.board, {
+          mover,
+          hitDelay: 330,
+          dragged: k === 0 ? dragged : null,
+          onLand: (el) => { if (el._p === mover) (m.to === OFF ? Sound.off() : Sound.checker()); },
+        });
+        updateCards();
+      }
+      if (state.phase === 'gameover' || state.phase === 'matchover') {
+        await wait(400);
+        showOver();
+        return;
+      }
+      movesNow = E.currentMoves(state);
+      if (!state.remaining.length || !movesNow.length) scheduleAutoDone(650);
+    });
+  }
+
+  function actDone() {
+    if (busy || !turnDone()) return;
+    clearTimeout(autoTimer);
+    pushHistory();
+    state = E.endTurn(state);
+    Sound.tap();
+    syncDice();
+    refresh();
+    banner(`Ред е на ${state.players[state.turn].name}`, 1100);
+  }
+
+  function actUndo() {
+    if (!history.length) return;
+    clearTimeout(autoTimer);
+    hideOverlay('#over');
+    return run(async () => {
+      state = history.pop();
+      Sound.tap();
+      syncDice();
+      await reconcile(state.board);
+    });
+  }
+
+  function actMain() {
+    if (state.phase === 'opening' || state.phase === 'roll') actRoll();
+    else if (state.phase === 'move') actDone();
+    else if (state.phase === 'gameover') nextGame();
+    else if (state.phase === 'matchover') rematch();
+  }
+
+  function nextGame() {
+    hideOverlay('#over');
+    state = E.nextGame(state);
+    freshGameView(`Игра ${state.gameNo + 1}`);
+  }
+
+  function rematch() {
+    hideOverlay('#over');
+    state = E.newMatch(state.players.map((p) => p.name), state.matchTo);
+    freshGameView('Реванш!');
+  }
+
+  function freshGameView(text) {
+    history = [];
+    rollLog = {};
+    selected = null;
+    return run(async () => {
+      syncDice();
+      await reconcile(state.board, { stagger: 28 });
+      banner(text);
+    });
+  }
+
+  function restartGame() {
+    const gameNo = state.gameNo;
+    state = { ...E.nextGame(state), gameNo };
+    freshGameView('Отначало');
+  }
+
+  // ---------- game over ----------
+  function showOver() {
+    const r = state.result;
+    const before = history[history.length - 1];
+    const prev = before ? before.score : state.score;
+    const name = state.players[r.winner].name;
+    const matchOver = state.phase === 'matchover';
+    $('#overTitle').textContent = matchOver ? `${name} печели мача!` : `${name} печели!`;
+    $('#overKind').textContent = { single: 'Победа · +1', gammon: 'Марс! · +2', backgammon: 'Бекгамон! · +3' }[r.kind];
+    for (const p of [LIGHT, DARK]) {
+      $('#overName' + p).textContent = state.players[p].name;
+      $('#overScore' + p).textContent = String(prev[p]);
+    }
+    $('#overTarget').textContent = state.matchTo ? `Мач до ${state.matchTo}` : 'Свободна игра';
+    $('#overNext').textContent = matchOver ? 'Реванш' : 'Следваща игра';
+    $('#overNew').hidden = !matchOver;
+    showOverlay('#over');
+    Sound.win(matchOver);
+    confetti(matchOver ? 260 : 110);
+    setTimeout(() => {
+      const b = $('#overScore' + r.winner);
+      b.textContent = String(state.score[r.winner]);
+      b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump');
+    }, dur(650));
+  }
+
+  function confetti(count) {
+    if (reduced.matches) return;
+    const cv = $('#confetti');
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
+    const ctx = cv.getContext('2d');
+    ctx.scale(dpr, dpr);
+    const colors = ['#ffd88a', '#e7b85c', '#f3ead8', '#b85a3c', '#2c5443', '#fffaf0'];
+    const parts = Array.from({ length: count }, () => ({
+      x: innerWidth / 2 + (Math.random() - 0.5) * 120,
+      y: innerHeight * 0.42,
+      vx: (Math.random() - 0.5) * 16,
+      vy: -Math.random() * 16 - 6,
+      r: Math.random() * Math.PI,
+      vr: (Math.random() - 0.5) * 0.4,
+      w: 6 + Math.random() * 7, h: 4 + Math.random() * 5,
+      c: colors[(Math.random() * colors.length) | 0],
+    }));
+    const start = performance.now();
+    function frame(t) {
+      const life = (t - start) / 3200;
+      ctx.clearRect(0, 0, innerWidth, innerHeight);
+      for (const q of parts) {
+        q.vy += 0.38; q.vx *= 0.99; q.x += q.vx; q.y += q.vy; q.r += q.vr;
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, 1 - life);
+        ctx.translate(q.x, q.y); ctx.rotate(q.r);
+        ctx.fillStyle = q.c;
+        ctx.fillRect(-q.w / 2, -q.h / 2, q.w, q.h * Math.abs(Math.cos(q.r * 2)));
+        ctx.restore();
+      }
+      if (life < 1) requestAnimationFrame(frame);
+      else ctx.clearRect(0, 0, innerWidth, innerHeight);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- overlays ----------
+  function showOverlay(sel) {
+    const o = $(sel);
+    o.classList.add('show');
+    $('#app').setAttribute('aria-hidden', 'true');
+    const f = o.querySelector('.btn.primary, input, .btn');
+    if (f) setTimeout(() => f.focus({ preventScroll: true }), 50);
+  }
+  function hideOverlay(sel) {
+    $(sel).classList.remove('show');
+    if (!document.querySelector('.overlay.show')) $('#app').removeAttribute('aria-hidden');
+  }
+  const anyOverlay = () => !!document.querySelector('.overlay.show');
+
+  // ---------- pointer input ----------
+  function toBoard(e) {
+    const r = $('#board').getBoundingClientRect();
+    return { x: (e.clientX - r.left) / scale, y: (e.clientY - r.top) / scale };
+  }
+
+  function select(from) {
+    selected = { from, dests: E.destinations(state.board, state.turn, state.remaining, from) };
+    Sound.tap();
+    updateHighlights();
+  }
+
+  function clearSelection() {
+    if (!selected) return;
+    selected = null;
+    updateHighlights();
+  }
+
+  function onPointerDown(e) {
+    if (busy || anyOverlay() || e.button > 0) return;
+    const { x, y } = toBoard(e);
+    if (state.phase === 'roll' || state.phase === 'opening') { actRoll(); return; }
+    if (state.phase !== 'move') return;
+    const loc = locAt(x, y);
+    if (selected && loc !== null && selected.dests.has(String(loc))) {
+      actMove(selected.dests.get(String(loc)));
+      return;
+    }
+    if (loc !== null && sources.has(loc)) {
+      const wasSelected = selected && selected.from === loc;
+      if (!wasSelected) select(loc);
+      const el = topChecker(state.turn, loc);
+      drag = { id: e.pointerId, sx: x, sy: y, el, loc, dragging: false, wasSelected, hover: null };
+      $('#board').setPointerCapture(e.pointerId);
+      return;
+    }
+    if (selected) {
+      Sound.error();
+      clearSelection();
+    }
+  }
+
+  function onPointerMove(e) {
+    if (!drag || e.pointerId !== drag.id) return;
+    const { x, y } = toBoard(e);
+    if (!drag.dragging) {
+      if (Math.hypot(x - drag.sx, y - drag.sy) < 8) return;
+      drag.dragging = true;
+      drag.el.classList.add('dragging', 'lifted');
+      drag.el.style.zIndex = '800';
+    }
+    place(drag.el, { x, y });
+    const loc = locAt(x, y);
+    const h = loc !== null && selected && selected.dests.has(String(loc)) ? hlFor(loc) : null;
+    if (h !== drag.hover) {
+      if (drag.hover) drag.hover.classList.remove('hover');
+      document.querySelectorAll('.spot.hover').forEach((el) => el.classList.remove('hover'));
+      if (h) {
+        h.classList.add('hover');
+        const spot = document.querySelector(`.spot[data-loc="${loc}"]`);
+        if (spot) spot.classList.add('hover');
+      }
+      drag.hover = h;
+    }
+  }
+
+  function onPointerUp(e) {
+    if (!drag || e.pointerId !== drag.id) return;
+    const d = drag;
+    drag = null;
+    if (d.hover) d.hover.classList.remove('hover');
+    if (!d.dragging) {
+      if (d.wasSelected) clearSelection();
+      return;
+    }
+    const { x, y } = toBoard(e);
+    const loc = locAt(x, y);
+    if (selected && loc !== null && selected.dests.has(String(loc))) {
+      actMove(selected.dests.get(String(loc)), d.el);
+      return;
+    }
+    // dropped somewhere illegal: back home
+    const arr = stacks[state.turn].get(keyOf(d.loc));
+    const pos = slot(state.turn, keyOf(d.loc), arr.length - 1, arr.length);
+    flyTo(d.el, pos, { fromDrag: true });
+    if (loc !== d.loc) Sound.error();
+  }
+
+  function onDoubleClick(e) {
+    if (busy || state.phase !== 'move') return;
+    const { x, y } = toBoard(e);
+    const loc = locAt(x, y);
+    if (loc === null || !sources.has(loc)) return;
+    const dests = E.destinations(state.board, state.turn, state.remaining, loc);
+    let best = null;
+    for (const path of dests.values()) {
+      if (path.length !== 1) continue;
+      if (!best || path[0].die > best[0].die) best = path;
+    }
+    if (best) actMove(best);
+  }
+
+  // ---------- keyboard ----------
+  function onKey(e) {
+    if (e.target && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') return;
+    if (e.key === 'Escape') {
+      if ($('#rules').classList.contains('show')) hideOverlay('#rules');
+      else if ($('#menu').classList.contains('show')) hideOverlay('#menu');
+      else clearSelection();
+      return;
+    }
+    if (anyOverlay()) return;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); actUndo(); return; }
+    if (e.key === ' ' || e.key === 'Enter') {
+      if (document.activeElement && document.activeElement.tagName === 'BUTTON') return;
+      e.preventDefault();
+      if (state.phase === 'opening' || state.phase === 'roll' || turnDone()) actMain();
+    }
+  }
+
+  // ---------- sizing ----------
+  function fit() {
+    const r = $('#boardWrap').getBoundingClientRect();
+    scale = Math.max(0.1, Math.min(r.width / G.W, r.height / G.H));
+    const box = $('#boardBox');
+    box.style.width = G.W * scale + 'px';
+    box.style.height = G.H * scale + 'px';
+    $('#board').style.transform = `scale(${scale})`;
+  }
+
+  // ---------- saving ----------
+  function save() {
+    if (!started) return;
+    try {
+      localStorage.setItem(STORE, JSON.stringify({ state, history: history.slice(-200), rollLog, settings, matchLength }));
+    } catch (_) { /* private mode or file:// without storage: the game still works */ }
+  }
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORE);
+      return raw ? JSON.parse(raw) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ---------- setup ----------
+  function startMatch(names, length) {
+    state = E.newMatch(names, length);
+    started = true;
+    shownScore = [null, null];
+    hideOverlay('#setup');
+    freshGameView('Започваме!');
+  }
+
+  function resume(saved) {
+    state = saved.state;
+    history = saved.history || [];
+    rollLog = saved.rollLog || {};
+    started = true;
+    shownScore = [null, null];
+    hideOverlay('#setup');
+    run(async () => {
+      syncDice();
+      await reconcile(state.board, { stagger: 20 });
+    }).then(() => {
+      if (state.phase === 'gameover' || state.phase === 'matchover') showOver();
+    });
+  }
+
+  function bindSetup(saved) {
+    const chips = document.querySelectorAll('#lengthChips button');
+    const pick = (v) => {
+      matchLength = v;
+      chips.forEach((c) => c.classList.toggle('on', +c.dataset.v === v));
+    };
+    chips.forEach((c) => c.addEventListener('click', () => { pick(+c.dataset.v); Sound.tap(); }));
+    pick(saved && saved.matchLength !== undefined ? saved.matchLength : 5);
+    if (saved && saved.state) {
+      $('#name0').value = saved.state.players[0].name;
+      $('#name1').value = saved.state.players[1].name;
+      if (saved.state.phase !== 'matchover') {
+        $('#resumeBtn').hidden = false;
+        $('#resumeBtn').addEventListener('click', () => resume(saved), { once: true });
+      }
+    }
+    $('#setupForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const n0 = $('#name0').value.trim() || $('#name0').placeholder;
+      let n1 = $('#name1').value.trim() || $('#name1').placeholder;
+      if (n1 === n0) n1 += ' 2';
+      $('#resumeBtn').hidden = true;
+      startMatch([n0, n1], matchLength);
+    });
+  }
+
+  function bindMenu() {
+    $('#menuBtn').addEventListener('click', () => {
+      if (busy) return;
+      document.querySelectorAll('#menu .armed').forEach((b) => { b.classList.remove('armed'); b.textContent = b.dataset.label; });
+      showOverlay('#menu');
+    });
+    const sound = $('#optSound');
+    const auto = $('#optAuto');
+    sound.checked = settings.sound;
+    auto.checked = settings.autoDone;
+    sound.addEventListener('change', () => { settings.sound = Sound.enabled = sound.checked; Sound.tap(); save(); });
+    auto.addEventListener('change', () => { settings.autoDone = auto.checked; save(); if (turnDone()) scheduleAutoDone(400); });
+    document.querySelectorAll('[data-act]').forEach((b) => {
+      if (b.dataset.confirm) b.dataset.label = b.textContent;
+      b.addEventListener('click', () => {
+        const act = b.dataset.act;
+        if (b.dataset.confirm && !b.classList.contains('armed')) {
+          b.classList.add('armed');
+          b.textContent = b.dataset.confirm;
+          return;
+        }
+        if (b.dataset.confirm) { b.classList.remove('armed'); b.textContent = b.dataset.label; }
+        if (act === 'close') { hideOverlay('#' + b.closest('.overlay').id); }
+        else if (act === 'rules') { hideOverlay('#menu'); showOverlay('#rules'); }
+        else if (act === 'restart') { hideOverlay('#menu'); restartGame(); }
+        else if (act === 'newmatch') {
+          hideOverlay('#menu'); hideOverlay('#over');
+          $('#resumeBtn').hidden = true;
+          showOverlay('#setup');
+        }
+        else if (act === 'undo') actUndo();
+        else if (act === 'next') actMain();
+      });
+    });
+    document.querySelectorAll('.overlay').forEach((o) => {
+      o.addEventListener('pointerdown', (e) => {
+        if (e.target === o && (o.id === 'menu' || o.id === 'rules')) hideOverlay('#' + o.id);
+      });
+    });
+  }
+
+  // ---------- boot ----------
+  function boot() {
+    buildBoardArt();
+    buildHighlights();
+    buildCheckers();
+    buildDice();
+    const saved = load();
+    if (saved && saved.settings) settings = { ...settings, ...saved.settings };
+    Sound.enabled = settings.sound;
+    state = E.newMatch(['Играч 1', 'Играч 2'], 5);
+    state = { ...state, board: { points: new Array(24).fill(0), bar: [0, 0], off: [15, 15] } };
+    reconcile(state.board, { animate: false });
+    fit();
+    new ResizeObserver(fit).observe($('#boardWrap'));
+    refresh();
+    bindSetup(saved);
+    bindMenu();
+    const board = $('#board');
+    board.addEventListener('pointerdown', onPointerDown);
+    board.addEventListener('pointermove', onPointerMove);
+    board.addEventListener('pointerup', onPointerUp);
+    board.addEventListener('pointercancel', onPointerUp);
+    board.addEventListener('dblclick', onDoubleClick);
+    $('#mainBtn').addEventListener('click', actMain);
+    $('#undoBtn').addEventListener('click', actUndo);
+    document.addEventListener('keydown', onKey);
+    setTimeout(() => $('#name0').focus({ preventScroll: true }), 300);
+    // for automated checks only
+    window.__tabla = { get state() { return state; }, get busy() { return busy; }, actMove, actRoll, actDone, actUndo, E };
+  }
+
+  boot();
+})();
+
+</script>
+</body>
+</html>
