@@ -118,6 +118,56 @@ async function settled(a, b, ms = 20000) {
   console.log('guest reload: rejoined the same game');
 
   console.log(`guest dragged: ${guestDragged}, guest undo: ${guestUndid}`);
+
+  // the host reloads: "Продължи онлайн играта" brings both back to the same game
+  const beforeHostReload = view((await T(host)).s);
+  await host.reload();
+  await host.click('#resumeBtn');
+  await host.waitForFunction(() => window.__tabla.online.connected, null, { timeout: 40000 });
+  s = await settled(host, guest, 30000);
+  if (view(s) !== beforeHostReload) throw new Error('the game changed across the host reload');
+  console.log('host reload: resumed the same game');
+
+  // the end of a game, seen on both screens: the host's last checker comes off
+  const pts = new Array(24).fill(0); pts[0] = 1; pts[20] = -15;
+  await host.evaluate((pts) => {
+    const saved = JSON.parse(localStorage.getItem('tabla.v1'));
+    saved.state = { ...saved.state, phase: 'roll', turn: 0, dice: [], remaining: [], board: { points: pts, bar: [0, 0], off: [14, 0] }, score: [1, 0] };
+    saved.history = [];
+    localStorage.setItem('tabla.v1', JSON.stringify(saved));
+  }, pts);
+  await host.reload();
+  await host.click('#resumeBtn');
+  await host.waitForFunction(() => window.__tabla.online.connected, null, { timeout: 40000 });
+  await settled(host, guest, 30000);
+  await host.click('#mainBtn', { force: true });
+  s = await settled(host, guest);
+  const last = await host.evaluate(() => window.__tabla.E.currentMoves(window.__tabla.state)[0]);
+  await host.evaluate((m) => window.__tabla.request({ k: 'move', path: [m] }), last);
+  s = await settled(host, guest);
+  if (s.phase !== 'matchover' || s.score[0] !== 3) throw new Error(`expected a 3:0 match win (марс), got ${s.phase} ${s.score}`);
+  await guest.waitForSelector('#over.show');
+  await host.waitForSelector('#over.show');
+  await guest.waitForTimeout(900);
+  await guest.screenshot({ path: path.join(out, 'online-guest-lost.png') });
+  await host.screenshot({ path: path.join(out, 'online-host-won.png') });
+  const guestTitle = await guest.textContent('#overTitle');
+  if (!guestTitle.includes('Иван')) throw new Error('guest saw the wrong title: ' + guestTitle);
+  // the guest asks for the rematch; both start over at 0:0
+  await guest.click('#overNext');
+  s = await settled(host, guest);
+  if (s.phase !== 'opening' || s.score.join() !== '0,0') throw new Error('rematch did not start on both screens');
+  if (await host.isVisible('#over.show')) throw new Error('the host still shows the game-over panel');
+  console.log('game over + rematch: agreed on both screens');
+
+  // the guest leaves; the host is told
+  await guest.click('#menuBtn');
+  await guest.click('#leaveBtn');
+  await guest.click('#leaveBtn');
+  await host.waitForFunction(() => !window.__tabla.online.connected, null, { timeout: 15000 });
+  await host.waitForTimeout(400);
+  const note = await host.textContent('#netStatus');
+  console.log('host after the guest left:', note);
   await browser.close();
   if (errors.length) { console.error(errors); process.exitCode = 1; } else console.log('online check passed');
 })().catch((e) => { console.error(e); console.error(errors); process.exit(1); });

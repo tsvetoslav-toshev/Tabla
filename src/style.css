@@ -72,6 +72,10 @@ svg { display: block; }
   }
   #card1 { align-self: start; }
   #card0 { align-self: end; }
+  /* the side column is narrow: the main button gets a row of its own */
+  .controls .buttons { flex-wrap: wrap; }
+  #mainBtn { flex: 1 1 100%; order: -1; }
+  #undoBtn { flex: 1; }
 }
 
 
@@ -153,7 +157,8 @@ svg { display: block; }
 .btn.big { height: 54px; font-size: 1.05rem; width: 100%; }
 .btn.danger.armed { background: rgba(224, 116, 90, 0.2); border-color: var(--danger); color: #ffd6cb; }
 .btn.link { background: none; height: auto; padding: 6px; color: var(--text-dim); font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
-#mainBtn span { display: inline-block; white-space: nowrap; }
+#mainBtn { min-width: 0; }
+#mainBtn span { display: inline-block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 #mainBtn span.swap { animation: swapIn var(--t-med) var(--ease-out); }
 
 /* ---------- checkers ---------- */
@@ -437,6 +442,9 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
   .btn { height: 40px; padding: 0 10px; }
   .btn.icon { width: 40px; }
   #undoBtn span { display: none; }
+  .controls .buttons { flex-wrap: wrap; }
+  #mainBtn { flex: 1 1 100%; order: -1; font-size: 0.88rem; letter-spacing: 0; padding: 0 6px; }
+  #undoBtn { flex: 1; }
   .controls .match { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {

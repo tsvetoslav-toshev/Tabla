@@ -464,6 +464,7 @@
     connected: false,
     awaiting: false, // the guest asked the host for something and waits for the answer
     note: '',
+    left: false, // the other player pressed "Напусни", rather than just losing the connection
   };
   let awaitTimer = 0;
   let remoteDrag = null; // the checker the other player is dragging right now
@@ -1187,12 +1188,13 @@
   function netStatusText(s, detail) {
     const friend = online.peerName || 'приятеля';
     if (s === 'error') return 'Този браузър не може да играе онлайн';
+    if (online.left && s !== 'connected') return `${online.peerName || 'Приятелят'} излезе от играта`;
     if (online.role === 'host') {
       if (s === 'starting') return 'Свързване…';
       if (s === 'waiting') return started ? `Чакаме ${friend} да се върне…` : 'Чакаме приятеля да отвори линка…';
       if (s === 'connected') return `Онлайн с ${friend}`;
       if (detail === 'server') return 'Няма интернет — опитвам пак…';
-      return `${online.peerName || 'Приятелят'} се разкачи — чакаме го…`;
+      return `${online.peerName || 'Приятелят'} се разкачи — изчакай да се върне…`;
     }
     if (s === 'connecting') return 'Свързване…';
     if (s === 'connected') return `Онлайн с ${friend}`;
@@ -1230,6 +1232,7 @@
       case 'hello':
         if (online.role !== 'host') break;
         online.peerName = String(msg.name || 'Приятел').slice(0, 16);
+        online.left = false;
         if (!started) {
           startMatch([online.myName, online.peerName], matchLength);
           enqueue(() => sendSync(true));
@@ -1267,6 +1270,7 @@
         break;
       case 'bye':
         online.connected = false;
+        online.left = true;
         online.note = `${online.peerName || 'Приятелят'} излезе от играта`;
         toast(online.note, 3000);
         if (state) { updateCards(); updateControls(); }
@@ -1289,6 +1293,7 @@
 
   function applySync(msg) {
     online.awaiting = false;
+    online.left = false;
     online.peerName = String(msg.hostName || msg.state.players[LIGHT].name);
     online.note = `Онлайн с ${online.peerName}`;
     hideOverlay('#lobby');
@@ -1322,7 +1327,7 @@
   function leaveOnline() {
     if (online.link) online.link.close();
     const wasGuest = online.role === 'guest';
-    Object.assign(online, { role: null, seat: null, id: null, link: null, peerName: '', connected: false, awaiting: false, note: '' });
+    Object.assign(online, { role: null, seat: null, id: null, link: null, peerName: '', connected: false, awaiting: false, note: '', left: false });
     if (wasGuest) {
       store(GUEST_STORE, null);
       started = false;

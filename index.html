@@ -81,6 +81,10 @@ svg { display: block; }
   }
   #card1 { align-self: start; }
   #card0 { align-self: end; }
+  /* the side column is narrow: the main button gets a row of its own */
+  .controls .buttons { flex-wrap: wrap; }
+  #mainBtn { flex: 1 1 100%; order: -1; }
+  #undoBtn { flex: 1; }
 }
 
 
@@ -162,7 +166,8 @@ svg { display: block; }
 .btn.big { height: 54px; font-size: 1.05rem; width: 100%; }
 .btn.danger.armed { background: rgba(224, 116, 90, 0.2); border-color: var(--danger); color: #ffd6cb; }
 .btn.link { background: none; height: auto; padding: 6px; color: var(--text-dim); font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
-#mainBtn span { display: inline-block; white-space: nowrap; }
+#mainBtn { min-width: 0; }
+#mainBtn span { display: inline-block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 #mainBtn span.swap { animation: swapIn var(--t-med) var(--ease-out); }
 
 /* ---------- checkers ---------- */
@@ -446,6 +451,9 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
   .btn { height: 40px; padding: 0 10px; }
   .btn.icon { width: 40px; }
   #undoBtn span { display: none; }
+  .controls .buttons { flex-wrap: wrap; }
+  #mainBtn { flex: 1 1 100%; order: -1; font-size: 0.88rem; letter-spacing: 0; padding: 0 6px; }
+  #undoBtn { flex: 1; }
   .controls .match { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1646,6 +1654,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     connected: false,
     awaiting: false, // the guest asked the host for something and waits for the answer
     note: '',
+    left: false, // the other player pressed "Напусни", rather than just losing the connection
   };
   let awaitTimer = 0;
   let remoteDrag = null; // the checker the other player is dragging right now
@@ -2369,12 +2378,13 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
   function netStatusText(s, detail) {
     const friend = online.peerName || 'приятеля';
     if (s === 'error') return 'Този браузър не може да играе онлайн';
+    if (online.left && s !== 'connected') return `${online.peerName || 'Приятелят'} излезе от играта`;
     if (online.role === 'host') {
       if (s === 'starting') return 'Свързване…';
       if (s === 'waiting') return started ? `Чакаме ${friend} да се върне…` : 'Чакаме приятеля да отвори линка…';
       if (s === 'connected') return `Онлайн с ${friend}`;
       if (detail === 'server') return 'Няма интернет — опитвам пак…';
-      return `${online.peerName || 'Приятелят'} се разкачи — чакаме го…`;
+      return `${online.peerName || 'Приятелят'} се разкачи — изчакай да се върне…`;
     }
     if (s === 'connecting') return 'Свързване…';
     if (s === 'connected') return `Онлайн с ${friend}`;
@@ -2412,6 +2422,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       case 'hello':
         if (online.role !== 'host') break;
         online.peerName = String(msg.name || 'Приятел').slice(0, 16);
+        online.left = false;
         if (!started) {
           startMatch([online.myName, online.peerName], matchLength);
           enqueue(() => sendSync(true));
@@ -2449,6 +2460,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
         break;
       case 'bye':
         online.connected = false;
+        online.left = true;
         online.note = `${online.peerName || 'Приятелят'} излезе от играта`;
         toast(online.note, 3000);
         if (state) { updateCards(); updateControls(); }
@@ -2471,6 +2483,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
 
   function applySync(msg) {
     online.awaiting = false;
+    online.left = false;
     online.peerName = String(msg.hostName || msg.state.players[LIGHT].name);
     online.note = `Онлайн с ${online.peerName}`;
     hideOverlay('#lobby');
@@ -2504,7 +2517,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
   function leaveOnline() {
     if (online.link) online.link.close();
     const wasGuest = online.role === 'guest';
-    Object.assign(online, { role: null, seat: null, id: null, link: null, peerName: '', connected: false, awaiting: false, note: '' });
+    Object.assign(online, { role: null, seat: null, id: null, link: null, peerName: '', connected: false, awaiting: false, note: '', left: false });
     if (wasGuest) {
       store(GUEST_STORE, null);
       started = false;
