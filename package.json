@@ -1,0 +1,11 @@
+{
+  "name": "tabla",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Офлайн табла за двама — един HTML файл",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test"
+  },
+  "license": "MIT"
+}
