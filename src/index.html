@@ -53,8 +53,28 @@
       <button class="btn ghost icon" id="menuBtn" title="Меню" aria-label="Меню"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
     </div>
     <div class="status" id="status" role="status" aria-live="polite"></div>
+    <div class="social" id="social" hidden>
+      <div class="emoji-bar" id="emojiBar" role="group" aria-label="Реакции"></div>
+      <button class="btn ghost chat-btn" id="chatBtn" type="button" aria-expanded="false" aria-controls="chat">
+        <svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg><span>Чат</span><b class="badge" id="chatBadge" hidden>0</b>
+      </button>
+    </div>
   </nav>
 </div>
+
+<!-- chat: slides in beside the board, the game stays playable -->
+<aside class="chat" id="chat" aria-hidden="true" aria-labelledby="chatTitle">
+  <header>
+    <h2 id="chatTitle">Чат</h2>
+    <button class="btn ghost icon" id="chatClose" type="button" aria-label="Затвори чата"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </header>
+  <div class="chat-list" id="chatList" role="log" aria-live="polite"></div>
+  <form class="chat-form" id="chatForm" autocomplete="off">
+    <input id="chatInput" maxlength="200" placeholder="Съобщение…" aria-label="Съобщение" enterkeyhint="send">
+    <button class="btn primary icon" type="submit" aria-label="Изпрати"><svg viewBox="0 0 24 24"><path d="M4 12h15M13 6l6 6-6 6"/></svg></button>
+  </form>
+</aside>
+
 
 <!-- start screen -->
 <div class="overlay show" id="setup" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
@@ -93,7 +113,7 @@
         <svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/></svg>
         Покани приятел онлайн
       </button>
-      <p class="hint host-only">Онлайн: първото име е твоето, а приятелят пише своето, когато отвори линка.</p>
+
     </form>
   </div>
 </div>
@@ -104,6 +124,7 @@
     <h2>Меню</h2>
     <button class="btn ghost wide" data-act="close">Обратно към играта</button>
     <button class="btn ghost wide" data-act="rules">Правила и управление</button>
+    <button class="btn ghost wide" data-act="rename">Смени името</button>
     <label class="toggle"><input type="checkbox" id="optSound"><span class="sw"></span>Звук</label>
     <label class="toggle"><input type="checkbox" id="optAuto"><span class="sw"></span>Край на хода без „Готово“</label>
     <button class="btn ghost wide danger" data-act="restart" data-confirm="Натисни пак, за да започнеш играта отначало">Играта отначало</button>
@@ -132,6 +153,9 @@
       <h3>Онлайн</h3>
       <p>„Покани приятел онлайн“ дава линк. Прати го на приятеля си — щом го отвори и напише името си, играта започва и двамата виждате всеки ход, хвърляне и хванат пул в момента. Всеки вижда своите пулове долу. Онлайн „Назад“ връща само твоите ходове, докато не си натиснал „Готово“.</p>
       <p>Ако връзката прекъсне или някой презареди страницата, играта продължава от същото място, щом се свържете отново.</p>
+      <p><b>Чат и реакции.</b> Под бутоните има 👍 😂 😮 😤 — излитат над дъската и при двамата. „Чат“ отваря разговора; ново съобщение изскача до името на приятеля.</p>
+      <p><b>Честни зарове.</b> Онлайн всяко хвърляне се прави от двата браузъра заедно: никой от двамата не може да нагласи числата, а браузърът на госта проверява всяко хвърляне.</p>
+      <p><b>Само за двама.</b> Първият, който отвори линка, заема мястото. Ако линкът стигне до някой друг, той вижда „Играта е заета“ и не може да влезе.</p>
     </div>
     <button class="btn primary wide" data-act="close">Разбрах</button>
   </div>
@@ -165,6 +189,12 @@
     <div class="pulse-ring" aria-hidden="true"><span></span><span></span><i></i></div>
     <h2 id="lobbyTitle">Покани приятел</h2>
     <p class="sub" id="lobbyText"></p>
+    <label class="field lobby-name" id="hostNameField">
+      <span class="token light" aria-hidden="true"></span>
+      <span class="lbl">Твоето име</span>
+      <input id="hostName" maxlength="16" placeholder="Напиши името си" spellcheck="false" autocomplete="nickname">
+    </label>
+    <p class="name-first" id="nameFirst">Първо напиши името си — после прати линка.</p>
     <div class="invite" id="invite">
       <input id="inviteLink" readonly aria-label="Линк за поканата">
       <button class="btn primary" id="copyBtn" type="button">Копирай</button>
@@ -172,6 +202,29 @@
     <button class="btn ghost wide" id="shareBtn" type="button" hidden>Изпрати…</button>
     <p class="wait" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span id="lobbyStatus">Свързване…</span></p>
     <button class="btn link" id="lobbyCancel" type="button">Отказ</button>
+  </div>
+</div>
+
+<!-- names -->
+<div class="overlay" id="rename" role="dialog" aria-modal="true" aria-labelledby="renameTitle">
+  <div class="panel rename">
+    <h2 id="renameTitle">Имена</h2>
+    <form id="renameForm" autocomplete="off">
+      <label class="field" id="renameRow0">
+        <span class="token light" aria-hidden="true"></span>
+        <span class="lbl">Светли пулове</span>
+        <input id="renameInput0" maxlength="16" spellcheck="false">
+      </label>
+      <label class="field" id="renameRow1">
+        <span class="token dark" aria-hidden="true"></span>
+        <span class="lbl">Тъмни пулове</span>
+        <input id="renameInput1" maxlength="16" spellcheck="false">
+      </label>
+      <div class="row">
+        <button class="btn ghost" type="button" data-act="close">Отказ</button>
+        <button class="btn primary" type="submit">Запази</button>
+      </div>
+    </form>
   </div>
 </div>
 

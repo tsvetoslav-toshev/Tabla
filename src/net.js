@@ -29,17 +29,24 @@
     return 'tabla-' + Array.from(a, (b) => (b % 36).toString(36)).join('');
   }
 
+  /** What one side accepts from the other: small messages, not too many of them. */
+  const MAX_MESSAGE = 16000;
+  const BURST = 80; // messages per 2 s — a drag sends ~25 a second
+
   /**
    * One side of the connection. Callbacks: onMessage(msg), onStatus(status, detail)
    * with status one of: 'starting', 'waiting', 'connecting', 'connected', 'lost', 'error'.
+   * The host also gets admit(hello): only a newcomer it admits can take part —
+   * anyone else holding the link is turned away without disturbing the game.
    */
-  function Link(role, { id, hostId, onMessage, onStatus }) {
+  function Link(role, { id, hostId, onMessage, onStatus, admit }) {
     let peer = null;
-    let conn = null;
+    let conn = null; // the connection in play
     let closed = false;
     let lastSeen = 0;
     let retryTimer = 0;
     let status = '';
+    let bucket = { start: 0, n: 0 };
     const setStatus = (s, detail) => {
       if (s === status && !detail) return;
       status = s;
@@ -55,22 +62,48 @@
       }
     }, PING_MS);
 
-    function attach(c) {
+    function acceptable(msg) {
+      if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return false;
+      const now = Date.now();
+      if (now - bucket.start > 2000) bucket = { start: now, n: 0 };
+      if (++bucket.n > BURST) return false;
+      // the host's full game state is the only big message, and only the host sends it
+      return role === 'guest' || JSON.stringify(msg).length <= MAX_MESSAGE;
+    }
+
+    function adopt(c) {
       if (conn && conn !== c) { try { conn.close(); } catch (_) { /* already gone */ } }
       conn = c;
+      lastSeen = Date.now();
+      setStatus('connected');
+    }
+
+    function watch(c) {
       c.on('open', () => {
-        lastSeen = Date.now();
-        setStatus('connected');
+        if (role !== 'guest') return;
+        adopt(c);
         onMessage({ t: 'open' });
       });
       c.on('data', (msg) => {
+        if (!acceptable(msg)) return;
+        if (c !== conn) {
+          if (role !== 'host' || msg.t !== 'hello') return;
+          if (admit(msg)) {
+            adopt(c);
+            onMessage(msg);
+          } else {
+            try { c.send({ t: 'busy' }); } catch (_) { /* gone already */ }
+            setTimeout(() => { try { c.close(); } catch (_) { /* gone */ } }, 500);
+          }
+          return;
+        }
         lastSeen = Date.now();
         if (status !== 'connected') setStatus('connected');
-        if (msg && msg.t === 'ping') return;
+        if (msg.t === 'ping') return;
         onMessage(msg);
       });
       c.on('close', () => {
-        if (conn !== c || closed) return;
+        if (c !== conn || closed) return;
         setStatus('lost');
         if (role === 'guest') reconnect();
       });
@@ -84,7 +117,7 @@
         if (!peer || peer.destroyed) { start(); return; }
         if (peer.disconnected) { peer.reconnect(); return; }
         setStatus('connecting');
-        attach(peer.connect(hostId, { reliable: true, serialization: 'json' }));
+        watch(peer.connect(hostId, { reliable: true, serialization: 'json' }));
       }, RETRY_MS);
     }
 
@@ -92,10 +125,10 @@
       setStatus(role === 'host' ? 'starting' : 'connecting');
       peer = role === 'host' ? new root.Peer(id, peerOptions()) : new root.Peer(peerOptions());
       peer.on('open', () => {
-        if (role === 'host') setStatus('waiting');
-        else attach(peer.connect(hostId, { reliable: true, serialization: 'json' }));
+        if (role === 'host') setStatus(conn && conn.open ? 'connected' : 'waiting');
+        else watch(peer.connect(hostId, { reliable: true, serialization: 'json' }));
       });
-      peer.on('connection', (c) => { if (role === 'host') attach(c); });
+      peer.on('connection', (c) => { if (role === 'host') watch(c); });
       peer.on('disconnected', () => { if (!closed) setTimeout(() => !closed && !peer.destroyed && peer.reconnect(), RETRY_MS); });
       peer.on('error', (e) => {
         if (closed) return;
@@ -144,6 +177,8 @@
 
   root.TablaNet = {
     newId,
+    /** A secret only this guest's browser knows: it proves the seat is theirs when they come back. */
+    newToken: () => newId().slice(6) + newId().slice(6),
     host: (id, handlers) => Link('host', { id, ...handlers }),
     join: (hostId, handlers) => Link('guest', { hostId, ...handlers }),
     /** A downloaded copy (file://) has no address a friend could open: invite them to the website. */

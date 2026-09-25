@@ -40,10 +40,13 @@ async function settled(a, b, ms = 20000) {
   require('node:fs').mkdirSync(out, { recursive: true });
   const browser = await chromium.launch();
   const host = await open(browser, `${base}?peer=${peer}`, 'host', { width: 1280, height: 800 });
-  await host.fill('#name0', 'Иван');
   await host.click('#lengthChips [data-v="3"]');
   await host.click('#hostBtn');
   await host.waitForFunction(() => document.querySelector('#inviteLink').value.includes('#join='));
+  // no name yet: the link stays locked until the host types one
+  if (!(await host.isDisabled('#copyBtn'))) throw new Error('the invite can be copied before the host has a name');
+  await host.fill('#hostName', 'Иван');
+  if (await host.isDisabled('#copyBtn')) throw new Error('the invite stays locked after the host typed a name');
   const invite = await host.inputValue('#inviteLink');
   await host.waitForTimeout(600);
   await host.screenshot({ path: path.join(out, 'online-lobby.png') });
@@ -100,6 +103,55 @@ async function settled(a, b, ms = 20000) {
   await host.screenshot({ path: path.join(out, 'online-host.png') });
   await guest.screenshot({ path: path.join(out, 'online-guest.png') });
 
+  // chat: text only, both ways; markup arrives as plain text
+  await guest.click('#chatBtn');
+  await guest.fill('#chatInput', '<b>Здрасти</b> <img src=x onerror=alert(1)>');
+  await guest.press('#chatInput', 'Enter');
+  await host.waitForFunction(() => window.__tabla.chat.length === 1, null, { timeout: 10000 });
+  if (!(await host.isVisible('.bubble'))) throw new Error('no chat bubble on the host');
+  if (await host.locator('#chatList b, #chatList img, .bubble b, .bubble img').count()) throw new Error('chat markup was rendered as HTML');
+  const badge = await host.textContent('#chatBadge');
+  if (badge !== '1') throw new Error('unread badge shows ' + badge);
+  await host.screenshot({ path: path.join(out, 'online-host-bubble.png') });
+  await host.click('#chatBtn');
+  await host.fill('#chatInput', 'Здрасти, Мария!');
+  await host.press('#chatInput', 'Enter');
+  await guest.waitForFunction(() => window.__tabla.chat.length === 2, null, { timeout: 10000 });
+  await guest.waitForTimeout(400);
+  await guest.screenshot({ path: path.join(out, 'online-guest-chat.png') });
+  await host.click('#chatClose');
+  await guest.click('#chatClose');
+
+  // reactions fly on the other screen
+  await host.locator('#emojiBar .emo').nth(1).click();
+  await guest.waitForSelector('.flying-emoji', { timeout: 5000 });
+  await guest.waitForTimeout(500);
+  await guest.screenshot({ path: path.join(out, 'online-guest-emoji.png') });
+
+  // someone else with the link is turned away, and the game goes on undisturbed
+  const intruder = await open(browser, invite, 'intruder', { width: 800, height: 600 });
+  await intruder.fill('#name1', 'Натрапник');
+  await intruder.click('#startBtn');
+  await intruder.waitForFunction(() => /заета/.test(document.querySelector('#lobbyStatus').textContent), null, { timeout: 20000 })
+    .catch(async (e) => { console.log('intruder sees:', await intruder.textContent('#lobbyStatus'), await intruder.evaluate(() => JSON.stringify(window.__tabla.online, (k, v) => (k === 'link' ? undefined : v)))); throw e; });
+  await intruder.screenshot({ path: path.join(out, 'online-intruder.png') });
+  await intruder.close();
+  await host.waitForTimeout(1500);
+  if (!(await T(host)).connected || !(await T(guest)).connected) throw new Error('the intruder broke the connection');
+  s = await settled(host, guest);
+  if (s.players[1].name !== 'Мария') throw new Error('the intruder took the seat');
+  console.log('intruder turned away; game undisturbed');
+
+  // the guest renames herself from the menu
+  await guest.click('#menuBtn');
+  await guest.click('#menu [data-act="rename"]');
+  if (await guest.isVisible('#renameRow0')) throw new Error("the guest can rename the host");
+  await guest.fill('#renameInput1', 'Мими');
+  await guest.click('#renameForm button[type=submit]');
+  s = await settled(host, guest);
+  if (s.players[1].name !== 'Мими') throw new Error('rename did not reach the host');
+  console.log('rename: both screens show Мими');
+
   // the guest may not move on the host's turn
   if (s.turn === 0 && s.phase === 'roll') {
     const before = view(s);
@@ -115,9 +167,13 @@ async function settled(a, b, ms = 20000) {
   await guest.waitForFunction(() => window.__tabla.online.connected, null, { timeout: 30000 });
   s = await settled(host, guest, 30000);
   if (view(s) !== beforeReload) throw new Error('the game changed across the guest reload');
+  if ((await guest.evaluate(() => window.__tabla.chat.length)) !== 2) throw new Error('the chat was lost on reload');
   console.log('guest reload: rejoined the same game');
 
   console.log(`guest dragged: ${guestDragged}, guest undo: ${guestUndid}`);
+  const warnings = await guest.evaluate(() => window.__tabla.online.fairWarnings);
+  if (warnings) throw new Error(`${warnings} throws failed the fair-dice check`);
+  console.log('fair dice: every throw checked out on the guest');
 
   // the host reloads: "Продължи онлайн играта" brings both back to the same game
   const beforeHostReload = view((await T(host)).s);
