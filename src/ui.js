@@ -1236,6 +1236,7 @@
   function netStatusText(s, detail) {
     const friend = online.peerName || 'приятеля';
     if (online.busy) return 'Тази игра е заета — някой друг вече е влязъл с този линк';
+    if (online.ended) return `${online.peerName || 'Домакинът'} приключи онлайн играта — линкът вече не работи`;
     if (s === 'error') return 'Този браузър не може да играе онлайн';
     if (online.left && s !== 'connected') return `${online.peerName || 'Приятелят'} излезе от играта`;
     if (online.role === 'host') {
@@ -1247,7 +1248,7 @@
     }
     if (s === 'connecting') return 'Свързване…';
     if (s === 'connected') return `Онлайн с ${friend}`;
-    if (detail === 'host-missing') return 'Играта не е отворена при домакина — опитвам пак…';
+    if (detail === 'host-missing') return 'Играта не е отворена при домакина (или вече е приключила) — опитвам пак…';
     if (detail === 'server') return 'Няма интернет — опитвам пак…';
     return 'Връзката прекъсна — свързвам се пак…';
   }
@@ -1256,7 +1257,7 @@
     online.connected = s === 'connected';
     online.note = netStatusText(s, detail);
     $('#lobbyStatus').textContent = online.note;
-    $('#lobby').classList.toggle('failed', s === 'error' || online.busy);
+    $('#lobby').classList.toggle('failed', s === 'error' || online.busy || online.ended);
     if (state) { updateCards(); updateControls(); updateSocial(); }
   }
 
@@ -1593,6 +1594,19 @@
         if (!busy) updateHighlights();
         break;
       case 'bye':
+        if (online.role === 'guest') {
+          // the host ended the online game on purpose: this link is finished
+          online.ended = true;
+          online.link.close();
+          store(GUEST_STORE, null); // a reload must not keep knocking on a closed game
+          $('#lobbyCancel').textContent = 'Към началото';
+          onNetStatus('error');
+          $('#lobbyTitle').textContent = 'Играта приключи';
+          $('#lobbyText').textContent = '';
+          hideOverlay('#over');
+          showOverlay('#lobby');
+          break;
+        }
         online.connected = false;
         online.left = true;
         online.note = `${online.peerName || 'Приятелят'} излезе от играта`;
@@ -1609,6 +1623,7 @@
     online.id = hostId;
     online.myName = name;
     online.busy = false;
+    online.ended = false;
     const g = readStore(GUEST_STORE);
     online.guestToken = g && g.hostId === hostId && g.token ? g.token : Net.newToken();
     store(GUEST_STORE, { hostId, name, token: online.guestToken });
@@ -1678,7 +1693,7 @@
   function leaveOnline() {
     if (online.link) online.link.close();
     const wasGuest = online.role === 'guest';
-    Object.assign(online, { role: null, seat: null, id: null, link: null, peerName: '', connected: false, awaiting: false, note: '', left: false, busy: false, guestToken: '' });
+    Object.assign(online, { role: null, seat: null, id: null, link: null, peerName: '', connected: false, awaiting: false, note: '', left: false, busy: false, ended: false, guestToken: '' });
     chatLog = [];
     unread = 0;
     fair.commit = '';
