@@ -7,8 +7,11 @@
   const { LIGHT, DARK, BAR, OFF } = E;
 
   const $ = (s) => document.querySelector(s);
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
-  const dur = (ms) => (reduced.matches ? 1 : ms);
+  // Full animations by default, even when the phone asks for less motion: the
+  // players chose that (an iPhone with Reduce Motion on used to see none at
+  // all). "Намалени анимации" in the menu makes every movement short and calm.
+  const reduced = { get matches() { return !!settings.calm; } };
+  const dur = (ms) => (reduced.matches ? Math.round(ms * 0.45) : ms);
   const wait = (ms) => new Promise((r) => setTimeout(r, dur(ms)));
   const EASE_OUT = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
   const EASE_IN_OUT = 'cubic-bezier(0.45, 0, 0.25, 1)';
@@ -75,7 +78,7 @@
   let state = null;
   let history = [];
   let rollLog = {}; // dice already thrown for a turn: undo never re-rolls
-  let settings = { sound: true, autoDone: false };
+  let settings = { sound: true, autoDone: false, calm: false };
   let matchLength = 5;
   let busy = false;
   let selected = null; // { from, dests: Map<string, move[]> }
@@ -1848,6 +1851,13 @@
       document.querySelectorAll('#menu [data-act="newmatch"]').forEach((b) => { b.hidden = !!online.role; });
       showOverlay('#menu');
     });
+    const calm = $('#optCalm');
+    calm.checked = settings.calm;
+    calm.addEventListener('change', () => {
+      settings.calm = calm.checked;
+      document.documentElement.classList.toggle('calm', settings.calm);
+      store(SETTINGS_STORE, settings);
+    });
     const sound = $('#optSound');
     const auto = $('#optAuto');
     sound.checked = settings.sound;
@@ -1897,6 +1907,7 @@
     const oldSettings = saved && saved.settings; // saved inside the game before version 2
     settings = { ...settings, ...(oldSettings || {}), ...(readStore(SETTINGS_STORE) || {}) };
     Sound.enabled = settings.sound;
+    document.documentElement.classList.toggle('calm', !!settings.calm);
     state = E.newMatch(['Играч 1', 'Играч 2'], 5);
     state = { ...state, board: { points: new Array(24).fill(0), bar: [0, 0], off: [15, 15] } };
     reconcile(state.board, { animate: false });

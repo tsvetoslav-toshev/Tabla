@@ -528,9 +528,8 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
   .chat-btn { height: 32px; width: 36px; padding: 0; }
   .chat-btn span { display: none; }
 }
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
-}
+/* "Намалени анимации" in the menu: short transitions, no endless pulsing */
+.calm *, .calm *::before, .calm *::after { animation-iteration-count: 1 !important; transition-duration: 140ms !important; }
 
 </style>
 </head>
@@ -651,6 +650,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     <button class="btn ghost wide" data-act="rename">Смени името</button>
     <label class="toggle"><input type="checkbox" id="optSound"><span class="sw"></span>Звук</label>
     <label class="toggle"><input type="checkbox" id="optAuto"><span class="sw"></span>Край на хода без „Готово“</label>
+    <label class="toggle"><input type="checkbox" id="optCalm"><span class="sw"></span>Намалени анимации</label>
     <button class="btn ghost wide danger" data-act="restart" data-confirm="Натисни пак, за да започнеш играта отначало">Играта отначало</button>
     <button class="btn ghost wide danger" data-act="newmatch" data-confirm="Натисни пак — резултатът се губи">Нов мач</button>
     <button class="btn ghost wide danger" data-act="leave" id="leaveBtn" data-confirm="Натисни пак, за да излезеш" hidden>Напусни онлайн играта</button>
@@ -1480,8 +1480,11 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
   const { LIGHT, DARK, BAR, OFF } = E;
 
   const $ = (s) => document.querySelector(s);
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
-  const dur = (ms) => (reduced.matches ? 1 : ms);
+  // Full animations by default, even when the phone asks for less motion: the
+  // players chose that (an iPhone with Reduce Motion on used to see none at
+  // all). "Намалени анимации" in the menu makes every movement short and calm.
+  const reduced = { get matches() { return !!settings.calm; } };
+  const dur = (ms) => (reduced.matches ? Math.round(ms * 0.45) : ms);
   const wait = (ms) => new Promise((r) => setTimeout(r, dur(ms)));
   const EASE_OUT = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
   const EASE_IN_OUT = 'cubic-bezier(0.45, 0, 0.25, 1)';
@@ -1548,7 +1551,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
   let state = null;
   let history = [];
   let rollLog = {}; // dice already thrown for a turn: undo never re-rolls
-  let settings = { sound: true, autoDone: false };
+  let settings = { sound: true, autoDone: false, calm: false };
   let matchLength = 5;
   let busy = false;
   let selected = null; // { from, dests: Map<string, move[]> }
@@ -3321,6 +3324,13 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       document.querySelectorAll('#menu [data-act="newmatch"]').forEach((b) => { b.hidden = !!online.role; });
       showOverlay('#menu');
     });
+    const calm = $('#optCalm');
+    calm.checked = settings.calm;
+    calm.addEventListener('change', () => {
+      settings.calm = calm.checked;
+      document.documentElement.classList.toggle('calm', settings.calm);
+      store(SETTINGS_STORE, settings);
+    });
     const sound = $('#optSound');
     const auto = $('#optAuto');
     sound.checked = settings.sound;
@@ -3370,6 +3380,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     const oldSettings = saved && saved.settings; // saved inside the game before version 2
     settings = { ...settings, ...(oldSettings || {}), ...(readStore(SETTINGS_STORE) || {}) };
     Sound.enabled = settings.sound;
+    document.documentElement.classList.toggle('calm', !!settings.calm);
     state = E.newMatch(['Играч 1', 'Играч 2'], 5);
     state = { ...state, board: { points: new Array(24).fill(0), bar: [0, 0], off: [15, 15] } };
     reconcile(state.board, { animate: false });

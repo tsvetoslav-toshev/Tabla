@@ -519,6 +519,5 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
   .chat-btn { height: 32px; width: 36px; padding: 0; }
   .chat-btn span { display: none; }
 }
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
-}
+/* "Намалени анимации" in the menu: short transitions, no endless pulsing */
+.calm *, .calm *::before, .calm *::after { animation-iteration-count: 1 !important; transition-duration: 140ms !important; }
