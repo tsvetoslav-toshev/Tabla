@@ -40,13 +40,16 @@ async function settled(a, b, ms = 20000) {
   require('node:fs').mkdirSync(out, { recursive: true });
   const browser = await chromium.launch();
   const host = await open(browser, `${base}?peer=${peer}`, 'host', { width: 1280, height: 800 });
+  await host.click('#modeOnline');
   await host.click('#lengthChips [data-v="3"]');
+  // no name yet: no link either
+  await host.click('#hostBtn');
+  await host.waitForTimeout(400);
+  if (await host.isVisible('#lobby.show')) throw new Error('an invite was made before the host typed a name');
+  await host.fill('#name0', 'Иван');
   await host.click('#hostBtn');
   await host.waitForFunction(() => document.querySelector('#inviteLink').value.includes('#join='));
-  // no name yet: the link stays locked until the host types one
-  if (!(await host.isDisabled('#copyBtn'))) throw new Error('the invite can be copied before the host has a name');
-  await host.fill('#hostName', 'Иван');
-  if (await host.isDisabled('#copyBtn')) throw new Error('the invite stays locked after the host typed a name');
+  if (await host.isDisabled('#copyBtn')) throw new Error('the invite stays locked although the host has a name');
   const invite = await host.inputValue('#inviteLink');
   await host.waitForTimeout(600);
   await host.screenshot({ path: path.join(out, 'online-lobby.png') });

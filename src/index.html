@@ -90,13 +90,29 @@
       <button class="btn ghost" type="button" id="recheckBtn">Провери пак</button>
       <button class="btn primary" type="button" id="toStartBtn">Към началото</button>
     </div>
-    <form id="setupForm" autocomplete="off">
+    <!-- step 1: how will you play? -->
+    <div class="modes" id="stepMode">
+      <button class="btn primary big" type="button" id="resumeBtn" hidden>Продължи играта</button>
+      <p class="modes-q">Как ще играете?</p>
+      <button class="mode-card" type="button" id="modeLocal">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="15" y="6" width="18" height="36" rx="4"/><path d="M21 37h6"/><circle cx="8" cy="20" r="4"/><circle cx="40" cy="20" r="4"/><path d="M2 34c1-5 4-8 6-8s5 3 6 8M34 34c1-5 4-8 6-8s5 3 6 8"/></svg>
+        <span><b>На един телефон</b><small>Един до друг, подавате си го. Работи и без интернет.</small></span>
+      </button>
+      <button class="mode-card" type="button" id="modeOnline">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="3" y="10" width="14" height="28" rx="3"/><rect x="31" y="10" width="14" height="28" rx="3"/><path d="M20 20c2.5-2 5.5-2 8 0M22 25c1.3-1 2.7-1 4 0"/><circle cx="24" cy="30" r="1.2"/></svg>
+        <span><b>Онлайн с приятел</b><small>Всеки от своя телефон — пращаш му линк.</small></span>
+      </button>
+    </div>
+
+    <!-- step 2: names and match -->
+    <form id="setupForm" autocomplete="off" hidden>
+      <button class="btn link back" type="button" id="backBtn">← Назад</button>
       <label class="field host-only">
         <span class="token light" aria-hidden="true"></span>
-        <span class="lbl">Светли пулове <small>прибират се долу вдясно</small></span>
+        <span class="lbl" id="name0Label">Светли пулове <small>прибират се долу вдясно</small></span>
         <input id="name0" maxlength="16" placeholder="Играч 1" spellcheck="false">
       </label>
-      <label class="field">
+      <label class="field local-only">
         <span class="token dark" aria-hidden="true"></span>
         <span class="lbl">Тъмни пулове <small>прибират се горе вдясно</small></span>
         <input id="name1" maxlength="16" placeholder="Играч 2" spellcheck="false">
@@ -110,14 +126,11 @@
         <button type="button" data-v="11">11</button>
         <button type="button" data-v="0" title="Без край">∞</button>
       </fieldset>
-      <button class="btn primary big" type="submit" id="startBtn">Играйте тук, на едно устройство</button>
-      <button class="btn ghost big" type="button" id="resumeBtn" hidden>Продължи играта</button>
-      <div class="or host-only"><span>или</span></div>
-      <button class="btn ghost big host-only" type="button" id="hostBtn">
+      <button class="btn primary big local-only" type="submit" id="startBtn">Започни</button>
+      <button class="btn primary big host-only online-only" type="button" id="hostBtn">
         <svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/></svg>
-        Покани приятел онлайн
+        Създай линк за приятеля
       </button>
-
     </form>
   </div>
 </div>

@@ -23,6 +23,7 @@ async function shoot(size, name, drive) {
 const idle = (page) => page.waitForFunction(() => !window.__tabla.busy);
 
 async function play(page, turns) {
+  await page.click('#modeLocal');
   await page.fill('#name0', 'Иван');
   await page.fill('#name1', 'Мария');
   await page.click('#startBtn');

@@ -362,12 +362,12 @@ svg { display: block; }
 .chips { border: 0; padding: 0; margin: 6px 0 20px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .chips legend { float: left; margin-right: 8px; color: var(--text-dim); font-size: 0.9rem; }
 .chips button {
-  flex: 1; min-width: 40px; height: 40px; border-radius: 10px; cursor: pointer;
+  flex: 1; min-width: 32px; height: 40px; border-radius: 10px; cursor: pointer; padding: 0;
   background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); font-weight: 600;
   transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out);
 }
 .chips button.on { background: var(--gold); color: #2a1a0e; border-color: transparent; transform: translateY(-2px); }
-#setupForm .btn + .btn { margin-top: 10px; }
+#setupForm .btn.big + .btn.big { margin-top: 10px; }
 
 .menu .btn + .btn, .menu .btn + .toggle, .menu .toggle + .toggle, .menu .toggle + .btn { margin-top: 10px; }
 .toggle { display: flex; align-items: center; gap: 12px; padding: 8px 4px; cursor: pointer; }
@@ -449,6 +449,25 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
 .name-first { margin: 0 0 10px; font-size: 0.85rem; color: var(--gold-hi); }
 .invite { transition: opacity var(--t-med) var(--ease-out), filter var(--t-med) var(--ease-out); }
 .invite.locked { opacity: 0.35; filter: blur(1.5px); pointer-events: none; }
+/* ---------- start: choose how to play ---------- */
+.modes { display: flex; flex-direction: column; gap: 12px; animation: stepIn var(--t-slow) var(--ease-out); }
+.modes-q { text-align: center; margin: 4px 0 0; color: var(--text-dim); font-size: 0.95rem; letter-spacing: 0.04em; }
+.mode-card {
+  display: flex; align-items: center; gap: 16px; width: 100%; padding: 16px 18px; text-align: left; cursor: pointer;
+  border-radius: 16px; border: 1px solid rgba(231, 184, 92, 0.3);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  transition: transform var(--t-fast) var(--ease-spring), border-color var(--t-med) var(--ease-out), background var(--t-med) var(--ease-out), box-shadow var(--t-med) var(--ease-out);
+}
+.mode-card:hover { border-color: var(--gold); background: linear-gradient(180deg, rgba(231, 184, 92, 0.14), rgba(231, 184, 92, 0.04)); box-shadow: 0 8px 26px rgba(231, 184, 92, 0.15); transform: translateY(-2px); }
+.mode-card:active { transform: scale(0.98); }
+.mode-card:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 2px; }
+.mode-card svg { width: 48px; height: 48px; flex: none; fill: none; stroke: var(--gold-hi); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.mode-card b { display: block; font: 1.2rem var(--font-display); font-weight: 400; margin-bottom: 3px; }
+.mode-card small { display: block; color: var(--text-dim); font-size: 0.85rem; line-height: 1.35; }
+#setupForm { animation: stepIn var(--t-slow) var(--ease-out); }
+#setupForm .back { display: block; margin: -6px 0 10px -6px; text-decoration: none; }
+#setupForm.mode-online .local-only, #setupForm.mode-local .online-only { display: none; }
+@keyframes stepIn { from { opacity: 0; transform: translateY(10px); } }
 .invite-gone { display: flex; gap: 10px; margin-bottom: 8px; }
 .invite-gone .btn { flex: 1; }
 .rename .row { display: flex; gap: 10px; margin-top: 8px; }
@@ -622,13 +641,29 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       <button class="btn ghost" type="button" id="recheckBtn">Провери пак</button>
       <button class="btn primary" type="button" id="toStartBtn">Към началото</button>
     </div>
-    <form id="setupForm" autocomplete="off">
+    <!-- step 1: how will you play? -->
+    <div class="modes" id="stepMode">
+      <button class="btn primary big" type="button" id="resumeBtn" hidden>Продължи играта</button>
+      <p class="modes-q">Как ще играете?</p>
+      <button class="mode-card" type="button" id="modeLocal">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="15" y="6" width="18" height="36" rx="4"/><path d="M21 37h6"/><circle cx="8" cy="20" r="4"/><circle cx="40" cy="20" r="4"/><path d="M2 34c1-5 4-8 6-8s5 3 6 8M34 34c1-5 4-8 6-8s5 3 6 8"/></svg>
+        <span><b>На един телефон</b><small>Един до друг, подавате си го. Работи и без интернет.</small></span>
+      </button>
+      <button class="mode-card" type="button" id="modeOnline">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="3" y="10" width="14" height="28" rx="3"/><rect x="31" y="10" width="14" height="28" rx="3"/><path d="M20 20c2.5-2 5.5-2 8 0M22 25c1.3-1 2.7-1 4 0"/><circle cx="24" cy="30" r="1.2"/></svg>
+        <span><b>Онлайн с приятел</b><small>Всеки от своя телефон — пращаш му линк.</small></span>
+      </button>
+    </div>
+
+    <!-- step 2: names and match -->
+    <form id="setupForm" autocomplete="off" hidden>
+      <button class="btn link back" type="button" id="backBtn">← Назад</button>
       <label class="field host-only">
         <span class="token light" aria-hidden="true"></span>
-        <span class="lbl">Светли пулове <small>прибират се долу вдясно</small></span>
+        <span class="lbl" id="name0Label">Светли пулове <small>прибират се долу вдясно</small></span>
         <input id="name0" maxlength="16" placeholder="Играч 1" spellcheck="false">
       </label>
-      <label class="field">
+      <label class="field local-only">
         <span class="token dark" aria-hidden="true"></span>
         <span class="lbl">Тъмни пулове <small>прибират се горе вдясно</small></span>
         <input id="name1" maxlength="16" placeholder="Играч 2" spellcheck="false">
@@ -642,14 +677,11 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
         <button type="button" data-v="11">11</button>
         <button type="button" data-v="0" title="Без край">∞</button>
       </fieldset>
-      <button class="btn primary big" type="submit" id="startBtn">Играйте тук, на едно устройство</button>
-      <button class="btn ghost big" type="button" id="resumeBtn" hidden>Продължи играта</button>
-      <div class="or host-only"><span>или</span></div>
-      <button class="btn ghost big host-only" type="button" id="hostBtn">
+      <button class="btn primary big local-only" type="submit" id="startBtn">Започни</button>
+      <button class="btn primary big host-only online-only" type="button" id="hostBtn">
         <svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/></svg>
-        Покани приятел онлайн
+        Създай линк за приятеля
       </button>
-
     </form>
   </div>
 </div>
@@ -3377,6 +3409,33 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     return [n0, n1];
   }
 
+  /**
+   * The start screen in two steps: first how you play (one phone, or online
+   * with a friend), then the names for that. A friend's invite skips step one.
+   */
+  function showSetupStep(step, mode) {
+    const form = $('#setupForm');
+    $('#stepMode').hidden = step !== 'mode';
+    form.hidden = step !== 'form';
+    if (step !== 'form') return;
+    form.classList.toggle('mode-local', mode === 'local');
+    form.classList.toggle('mode-online', mode === 'online');
+    const label = $('#name0Label');
+    label.textContent = mode === 'online' ? 'Твоето име ' : 'Светли пулове ';
+    const small = document.createElement('small');
+    small.textContent = mode === 'online' ? 'играеш със светлите' : 'прибират се долу вдясно';
+    label.appendChild(small);
+    $('#name0').placeholder = mode === 'online' ? 'Напиши името си' : 'Играч 1';
+    const first = mode === 'online' || !$('#name0').value ? '#name0' : '#name1';
+    setTimeout(() => $(first).focus({ preventScroll: true }), 60);
+  }
+
+  /** Back to the start: the choice of how to play. */
+  function openSetup() {
+    showSetupStep('mode');
+    showOverlay('#setup');
+  }
+
   function bindSetup(saved, joinId) {
     const chips = document.querySelectorAll('#lengthChips button');
     const pick = (v) => {
@@ -3386,7 +3445,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     chips.forEach((c) => c.addEventListener('click', () => { pick(+c.dataset.v); Sound.tap(); }));
     pick(saved && saved.matchLength !== undefined ? saved.matchLength : 5);
     if (saved && saved.state) {
-      $('#name0').value = saved.state.players[0].name;
+      $('#name0').value = saved.online ? saved.online.myName || '' : saved.state.players[0].name;
       if (!saved.online) $('#name1').value = saved.state.players[1].name;
       if (saved.state.phase !== 'matchover' && !joinId) {
         $('#resumeBtn').hidden = false;
@@ -3395,7 +3454,9 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       }
     }
     if (joinId) {
-      // opened from a friend's invite
+      // opened from a friend's invite: straight to joining, no choice of mode
+      showSetupStep('form', 'local');
+      $('#backBtn').hidden = true;
       $('#setupForm').classList.add('joining');
       $('#joinNote').hidden = false;
       document.querySelectorAll('.host-only').forEach((el) => { el.hidden = true; });
@@ -3418,13 +3479,20 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
         return;
       }
       if (online.role === 'guest') return; // a second tap after joining
+      if ($('#setupForm').classList.contains('mode-online')) { $('#hostBtn').click(); return; } // Enter in the name field
       startMatch([n0, n1], matchLength);
     });
+    $('#modeLocal').addEventListener('click', () => { Sound.tap(); showSetupStep('form', 'local'); });
+    $('#modeOnline').addEventListener('click', () => { Sound.tap(); showSetupStep('form', 'online'); });
+    $('#backBtn').addEventListener('click', () => showSetupStep('mode'));
     $('#recheckBtn').addEventListener('click', () => checkInvite(joinId));
     $('#toStartBtn').addEventListener('click', () => { clearHash(); location.reload(); });
     $('#hostBtn').addEventListener('click', () => {
+      if (online.role) return;
+      const mine = cleanName($('#name0').value, '');
+      if (!mine) { nudge('#name0'); return; }
       $('#resumeBtn').hidden = true;
-      online.myName = cleanName($('#name0').value, '');
+      online.myName = mine;
       online.peerName = '';
       online.guestToken = '';
       chatLog = [];
@@ -3495,7 +3563,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     $('#lobbyCancel').addEventListener('click', () => {
       leaveOnline();
       hideOverlay('#lobby');
-      showOverlay('#setup');
+      openSetup();
     });
   }
 
@@ -3567,7 +3635,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
           started = false;
           store(STORE, null);
           $('#resumeBtn').hidden = true;
-          showOverlay('#setup');
+          openSetup();
         }
         else if (act === 'undo') request({ k: 'undo' });
         else if (act === 'next') actMain();
@@ -3632,7 +3700,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       hideOverlay('#setup');
       joinOnline(inviteFromFriend, g.name);
     } else {
-      setTimeout(() => $(inviteFromFriend ? '#name1' : '#name0').focus({ preventScroll: true }), 300);
+      setTimeout(() => $(inviteFromFriend ? '#name1' : ($('#resumeBtn').hidden ? '#modeLocal' : '#resumeBtn')).focus({ preventScroll: true }), 300);
     }
     // for automated checks only
     window.__tabla = {
