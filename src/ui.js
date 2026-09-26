@@ -7,8 +7,11 @@
   const { LIGHT, DARK, BAR, OFF } = E;
 
   const $ = (s) => document.querySelector(s);
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
-  const dur = (ms) => (reduced.matches ? 1 : ms);
+  // Full animations by default, even when the phone asks for less motion: the
+  // players chose that (an iPhone with Reduce Motion on used to see none at
+  // all). "Намалени анимации" in the menu makes every movement short and calm.
+  const reduced = { get matches() { return !!settings.calm; } };
+  const dur = (ms) => (reduced.matches ? Math.round(ms * 0.45) : ms);
   const wait = (ms) => new Promise((r) => setTimeout(r, dur(ms)));
   const EASE_OUT = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
   const EASE_IN_OUT = 'cubic-bezier(0.45, 0, 0.25, 1)';
@@ -75,7 +78,7 @@
   let state = null;
   let history = [];
   let rollLog = {}; // dice already thrown for a turn: undo never re-rolls
-  let settings = { sound: true, autoDone: false };
+  let settings = { sound: true, autoDone: false, calm: false };
   let matchLength = 5;
   let busy = false;
   let selected = null; // { from, dests: Map<string, move[]> }
@@ -221,17 +224,29 @@
     el.style.transform = tr(pos);
   }
 
+  /**
+   * Resolves when an animation ends — or a little after it should have. A
+   * hidden page (an iPhone app switched away from the in-app browser) pauses
+   * animations, and the game must never wait on one forever.
+   */
+  function settle(a, ms) {
+    return new Promise((res) => {
+      const t = setTimeout(() => { try { a.finish(); } catch (_) { /* already gone */ } res(); }, ms + 400);
+      a.finished.then(() => { clearTimeout(t); res(); }, () => { clearTimeout(t); res(); });
+    });
+  }
+
   function flyTo(el, pos, { delay = 0, onLand, fromDrag = false } = {}) {
     const from = { x: el._x, y: el._y };
     place(el, pos);
     const dist = Math.hypot(pos.x - from.x, pos.y - from.y);
-    const d = dur(Math.min(760, 300 + dist * 0.42));
+    const d = reduced.matches ? Math.min(380, 200 + dist * 0.2) : Math.min(760, 300 + dist * 0.42);
     const dl = dur(delay);
     el.style.zIndex = String(600 + Math.round(delay / 10));
-    if (!fromDrag) setTimeout(() => el.classList.add('lifted'), dl);
+    if (!fromDrag && !reduced.matches) setTimeout(() => el.classList.add('lifted'), dl);
     setTimeout(() => el.classList.remove('lifted', 'dragging'), dl + d * 0.72);
-    const a = el.animate([{ transform: tr(from) }, { transform: tr(pos) }], { duration: d, delay: dl, easing: EASE_IN_OUT, fill: 'backwards' });
-    return a.finished.catch(() => {}).then(() => {
+    const a = el.animate([{ transform: tr(from) }, { transform: tr(pos) }], { duration: d, delay: dl, easing: reduced.matches ? EASE_OUT : EASE_IN_OUT, fill: 'backwards' });
+    return settle(a, d + dl).then(() => {
       el.style.zIndex = String(el._z);
       if (onLand) onLand(el);
     });
@@ -240,7 +255,7 @@
   function slideTo(el, pos) {
     const from = { x: el._x, y: el._y };
     place(el, pos);
-    return el.animate([{ transform: tr(from) }, { transform: tr(pos) }], { duration: dur(220), easing: EASE_OUT }).finished.catch(() => {});
+    return settle(el.animate([{ transform: tr(from) }, { transform: tr(pos) }], { duration: dur(220), easing: EASE_OUT }), dur(220));
   }
 
   /**
@@ -248,7 +263,32 @@
    * change place move, so one call animates a move, a hit, an undo of several
    * moves or a whole new game alike.
    */
-  function reconcile(board, { animate = true, mover = null, hitDelay = 0, stagger = 0, dragged = null, onLand } = {}) {
+  /** A board the screen can show: 15 checkers a side, all in real places. */
+  const boardOk = (b) => !!b && Array.isArray(b.points) && b.points.length === 24
+    && [LIGHT, DARK].every((p) => KEYS.reduce((n, k) => n + targetCount(b, p, k), 0) === E.CHECKERS);
+
+  /** All 30 checker elements back in the trays' stacks, whatever went wrong before. */
+  function stacksBroken() {
+    return [LIGHT, DARK].some((p) => KEYS.reduce((n, k) => {
+      const arr = stacks[p].get(k);
+      return arr.includes(undefined) ? Infinity : n + arr.length;
+    }, 0) !== E.CHECKERS);
+  }
+  function rebuildStacks() {
+    for (const p of [LIGHT, DARK]) {
+      for (const key of KEYS) stacks[p].set(key, []);
+      const own = [...document.querySelectorAll('#checkers .checker')].filter((el) => el._p === p);
+      stacks[p].get('off').push(...own);
+    }
+  }
+
+  function reconcile(board, { animate: wantAnimate = true, mover = null, hitDelay = 0, stagger = 0, dragged = null, onLand } = {}) {
+    if (!boardOk(board)) {
+      console.error('reconcile: not a board', board);
+      return Promise.resolve();
+    }
+    if (stacksBroken()) rebuildStacks();
+    const animate = wantAnimate && !document.hidden; // nobody is looking: just put them in place
     const moved = new Set();
     for (const p of [LIGHT, DARK]) {
       const surplus = [];
@@ -260,7 +300,7 @@
       for (const key of KEYS) {
         const arr = stacks[p].get(key);
         const t = targetCount(board, p, key);
-        while (arr.length < t) {
+        while (arr.length < t && surplus.length) {
           const el = surplus.shift();
           arr.push(el);
           moved.add(el);
@@ -304,8 +344,8 @@
   }
 
   const topChecker = (p, loc) => {
-    const arr = stacks[p].get(keyOf(loc));
-    return arr[arr.length - 1];
+    const arr = stacks[p] && stacks[p].get(keyOf(loc));
+    return arr ? arr[arr.length - 1] : undefined; // a place that does not exist has no checker
   };
 
   // ---------- dice ----------
@@ -401,6 +441,7 @@
   /** The throw: dice fly in from the thrower's edge, bounce and tumble to their numbers. */
   function throwDice(specs, extraFrom) {
     diceEls.forEach(hideDie);
+    if (reduced.matches) return settleDiceCalmly(specs, extraFrom);
     const jobs = [];
     const D = dur(950);
     specs.forEach((s, i) => {
@@ -411,11 +452,11 @@
       el.style.opacity = '1';
       if (s.extra) {
         // the second pair of a double appears once the first two have landed
-        jobs.push(el.animate([
+        jobs.push(settle(el.animate([
           { opacity: 0, transform: dieTr(s.x, s.y, 0.3) },
           { opacity: 1, transform: dieTr(s.x, s.y, 1.15), offset: 0.6 },
           { opacity: 1, transform: dieTr(s.x, s.y) },
-        ], { duration: dur(380), delay: D + dur(90 * (i - 1)), easing: EASE_OUT, fill: 'backwards' }).finished.catch(() => {}));
+        ], { duration: dur(380), delay: D + dur(90 * (i - 1)), easing: EASE_OUT, fill: 'backwards' }), D + 800));
         return;
       }
       const from = s.from !== undefined ? s.from : extraFrom;
@@ -424,13 +465,13 @@
       const sy = atBottom(from) ? G.BOTTOM + 30 : G.TOP - 30;
       const ox = s.x + (Math.random() * 30 - 15);
       const oy = s.y + dir * 34;
-      jobs.push(el.animate([
+      jobs.push(settle(el.animate([
         { opacity: 0, transform: dieTr(sx, sy, 0.8) },
         { opacity: 1, transform: dieTr((sx + s.x) / 2, (sy + s.y) / 2, 1.35), offset: 0.3 },
         { transform: dieTr(ox, oy, 1), offset: 0.58 },
         { transform: dieTr(s.x, s.y - dir * 6, 1.1), offset: 0.76 },
         { transform: dieTr(s.x, s.y, 1) },
-      ], { duration: D, easing: 'cubic-bezier(0.25, 0.6, 0.3, 1)' }).finished.catch(() => {}));
+      ], { duration: D, easing: 'cubic-bezier(0.25, 0.6, 0.3, 1)' }), D));
       const spinX = -(720 + Math.floor(Math.random() * 3) * 90);
       const spinY = -(540 + Math.floor(Math.random() * 3) * 90);
       const spinZ = Math.random() < 0.5 ? -270 : 270;
@@ -441,6 +482,27 @@
     });
     Sound.rattle(D * 0.6);
     setTimeout(() => Sound.land(), D * 0.58);
+    return Promise.all(jobs);
+  }
+
+  /** "Намалени анимации": the dice just settle into place, no tumbling. */
+  function settleDiceCalmly(specs, extraFrom) {
+    const jobs = specs.map((s, i) => {
+      const el = diceEls[i];
+      el._tilt = Math.random() * 16 - 8;
+      setDie(el, s);
+      el._shown = true;
+      el.style.opacity = '1';
+      const from = s.from !== undefined ? s.from : extraFrom;
+      const dy = atBottom(from) ? 14 : -14;
+      const delay = s.extra ? 260 + 60 * (i - 2) : 60 * i;
+      return settle(el.animate([
+        { opacity: 0, transform: dieTr(s.x, s.y + dy, 0.92) },
+        { opacity: 1, transform: dieTr(s.x, s.y) },
+      ], { duration: 300, delay, easing: EASE_OUT, fill: 'backwards' }), 300 + delay);
+    });
+    Sound.rattle(220);
+    setTimeout(() => Sound.land(), 220);
     return Promise.all(jobs);
   }
 
@@ -470,6 +532,8 @@
     fairWarnings: 0,
   };
   let awaitTimer = 0;
+  let actSeq = 0; // host: acts sent so far; guest: the last act shown
+  let resyncAsked = 0;
   let remoteDrag = null; // the checker the other player is dragging right now
   let remoteSel = null; // the checker the other player has picked up
   let localDropped = null; // our checker, dropped on a target, waiting for the move to be played
@@ -678,8 +742,11 @@
     chain = chain.then(async () => {
       busy = true;
       selected = null;
-      refresh();
-      try { await fn(); } catch (e) { console.error(e); } finally { busy = false; refresh(); }
+      try { refresh(); await fn(); } catch (e) { console.error(e); }
+      finally {
+        busy = false;
+        try { refresh(); } catch (e) { console.error(e); }
+      }
     });
     return chain;
   }
@@ -797,7 +864,7 @@
       history = [];
       rollLog = {};
     }
-    if (online.role === 'host') send({ t: 'act', a: act, state: next });
+    if (online.role === 'host') send({ t: 'act', a: act, state: next, seq: ++actSeq });
     return present(prev, act, next);
   }
 
@@ -870,6 +937,14 @@
         break;
       }
       case 'move': {
+        if (online.role === 'guest' && !checkedPath(prev, a.path)) {
+          // this screen is out of step with the host: take the host's board as it is
+          state = next;
+          syncDice();
+          await reconcile(next.board);
+          send({ t: 'resync' });
+          break;
+        }
         const mover = prev.turn;
         let s = prev;
         for (let k = 0; k < a.path.length; k++) {
@@ -887,6 +962,7 @@
           updateCards();
         }
         state = next;
+        await reconcile(next.board); // nothing to do when the replay matched the host
         if (next.phase === 'gameover' || next.phase === 'matchover') {
           await wait(400);
           showOver(prev.score);
@@ -1151,6 +1227,7 @@
   // The other player's hand, seen from this side of the table (mirrored).
   function onRemoteDrag(msg) {
     if (busy || state.phase !== 'move' || myTurn()) return;
+    if (!((typeof msg.from === 'number' && msg.from >= 0 && msg.from < 24) || msg.from === BAR)) return;
     const el = topChecker(state.turn, msg.from);
     if (!el) return;
     if (remoteDrag && remoteDrag.el !== el) settleRemoteDrag();
@@ -1195,6 +1272,7 @@
     const box = $('#boardBox');
     box.style.width = G.W * scale + 'px';
     box.style.height = G.H * scale + 'px';
+    box.style.setProperty('--s', String(scale));
     $('#board').style.transform = `scale(${scale})`;
   }
 
@@ -1233,6 +1311,7 @@
   function netStatusText(s, detail) {
     const friend = online.peerName || 'приятеля';
     if (online.busy) return 'Тази игра е заета — някой друг вече е влязъл с този линк';
+    if (online.ended) return `${online.peerName || 'Домакинът'} приключи онлайн играта — линкът вече не работи`;
     if (s === 'error') return 'Този браузър не може да играе онлайн';
     if (online.left && s !== 'connected') return `${online.peerName || 'Приятелят'} излезе от играта`;
     if (online.role === 'host') {
@@ -1244,7 +1323,7 @@
     }
     if (s === 'connecting') return 'Свързване…';
     if (s === 'connected') return `Онлайн с ${friend}`;
-    if (detail === 'host-missing') return 'Играта не е отворена при домакина — опитвам пак…';
+    if (detail === 'host-missing') return 'Играта не е отворена при домакина (или вече е приключила) — опитвам пак…';
     if (detail === 'server') return 'Няма интернет — опитвам пак…';
     return 'Връзката прекъсна — свързвам се пак…';
   }
@@ -1253,7 +1332,7 @@
     online.connected = s === 'connected';
     online.note = netStatusText(s, detail);
     $('#lobbyStatus').textContent = online.note;
-    $('#lobby').classList.toggle('failed', s === 'error' || online.busy);
+    $('#lobby').classList.toggle('failed', s === 'error' || online.busy || online.ended);
     if (state) { updateCards(); updateControls(); updateSocial(); }
   }
 
@@ -1281,8 +1360,15 @@
     return token === online.guestToken;
   }
 
+  /**
+   * The whole game for the guest. PeerJS refuses a message of 16 KB or more,
+   * so the oldest chat lines are left out when the chat is long.
+   */
   function sendSync(fresh) {
-    send({ t: 'sync', state, fresh: !!fresh, hostName: online.myName, chat: chatLog });
+    let chat = chatLog.slice(-60);
+    const msg = () => ({ t: 'sync', state, fresh: !!fresh, hostName: online.myName, chat, seq: actSeq });
+    while (chat.length && Net.byteLength(msg()) > Net.PEER_LIMIT - 1300) chat = chat.slice(1);
+    send(msg());
   }
 
   // ---------- online: fair dice ----------
@@ -1451,8 +1537,8 @@
     b.className = 'bubble ' + (atBottom(p) ? 'from-bottom' : 'from-top');
     b.textContent = text;
     b.style.left = Math.min(innerWidth - 16, Math.max(16, r.left + 24)) + 'px';
-    b.style.top = (atBottom(p) ? r.top - 8 : r.bottom + 8) + 'px';
     document.body.appendChild(b);
+    b.style.top = (atBottom(p) ? r.top - 8 - b.offsetHeight : r.bottom + 8) + 'px';
     b.addEventListener('click', () => setChatOpen(true));
     b.animate([
       { opacity: 0, transform: `translateY(${atBottom(p) ? 10 : -10}px) scale(0.9)` },
@@ -1565,7 +1651,16 @@
         if (online.role !== 'guest') break;
         online.awaiting = false;
         clearTimeout(awaitTimer);
+        if (typeof msg.seq === 'number' && msg.seq !== actSeq + 1) {
+          // an act went missing: ask for the whole game instead of guessing
+          askResync();
+          break;
+        }
+        if (typeof msg.seq === 'number') actSeq = msg.seq;
         enqueue(() => present(state, msg.a, msg.state));
+        break;
+      case 'resync':
+        if (online.role === 'host') enqueue(() => sendSync(false));
         break;
       case 'commit':
         if (online.role === 'guest') onCommit(msg);
@@ -1586,10 +1681,23 @@
         settleRemoteDrag();
         break;
       case 'sel':
-        remoteSel = msg.from;
+        remoteSel = (typeof msg.from === 'number' && msg.from >= 0 && msg.from < 24) || msg.from === BAR ? msg.from : null;
         if (!busy) updateHighlights();
         break;
       case 'bye':
+        if (online.role === 'guest') {
+          // the host ended the online game on purpose: this link is finished
+          online.ended = true;
+          online.link.close();
+          store(GUEST_STORE, null); // a reload must not keep knocking on a closed game
+          $('#lobbyCancel').textContent = 'Към началото';
+          onNetStatus('error');
+          $('#lobbyTitle').textContent = 'Играта приключи';
+          $('#lobbyText').textContent = '';
+          hideOverlay('#over');
+          showOverlay('#lobby');
+          break;
+        }
         online.connected = false;
         online.left = true;
         online.note = `${online.peerName || 'Приятелят'} излезе от играта`;
@@ -1606,6 +1714,7 @@
     online.id = hostId;
     online.myName = name;
     online.busy = false;
+    online.ended = false;
     const g = readStore(GUEST_STORE);
     online.guestToken = g && g.hostId === hostId && g.token ? g.token : Net.newToken();
     store(GUEST_STORE, { hostId, name, token: online.guestToken });
@@ -1615,7 +1724,18 @@
     online.link = Net.join(hostId, { onMessage: onNetMessage, onStatus: onNetStatus });
   }
 
+  function askResync() {
+    const now = Date.now();
+    if (now - resyncAsked < 1500) return;
+    resyncAsked = now;
+    send({ t: 'resync' });
+  }
+
   function applySync(msg) {
+    if (!msg.state || !boardOk(msg.state.board)) return;
+    if (typeof msg.seq === 'number') actSeq = msg.seq;
+    settleRemoteDrag();
+    localDropped = null;
     online.awaiting = false;
     online.left = false;
     online.peerName = cleanName(msg.hostName || msg.state.players[LIGHT].name, 'Приятел');
@@ -1675,10 +1795,11 @@
   function leaveOnline() {
     if (online.link) online.link.close();
     const wasGuest = online.role === 'guest';
-    Object.assign(online, { role: null, seat: null, id: null, link: null, peerName: '', connected: false, awaiting: false, note: '', left: false, busy: false, guestToken: '' });
+    Object.assign(online, { role: null, seat: null, id: null, link: null, peerName: '', connected: false, awaiting: false, note: '', left: false, busy: false, ended: false, guestToken: '' });
     chatLog = [];
     unread = 0;
     fair.commit = '';
+    actSeq = 0;
     if (wasGuest) {
       store(GUEST_STORE, null);
       started = false;
@@ -1760,6 +1881,7 @@
       $('#name1').value = g && g.name ? g.name : '';
       $('#startBtn').textContent = 'Влез в играта';
       $('#name1').closest('.field').querySelector('.lbl').textContent = 'Твоето име';
+      checkInvite(joinId);
     }
     $('#setupForm').addEventListener('submit', (e) => {
       e.preventDefault();
@@ -1768,12 +1890,16 @@
       if ($('#setupForm').classList.contains('joining')) {
         const mine = cleanName($('#name1').value, '');
         if (!mine) { nudge('#name1'); return; }
+        if (online.role) return; // already joining
         $('#setupForm').classList.remove('joining');
         joinOnline(joinId, mine);
         return;
       }
+      if (online.role === 'guest') return; // a second tap after joining
       startMatch([n0, n1], matchLength);
     });
+    $('#recheckBtn').addEventListener('click', () => checkInvite(joinId));
+    $('#toStartBtn').addEventListener('click', () => { clearHash(); location.reload(); });
     $('#hostBtn').addEventListener('click', () => {
       $('#resumeBtn').hidden = true;
       online.myName = cleanName($('#name0').value, '');
@@ -1782,6 +1908,32 @@
       chatLog = [];
       started = false;
       hostOnline(Net.newId(), false);
+    });
+  }
+
+  /**
+   * Before asking a friend for a name, find out whether the game behind the
+   * invite is open at all: a closed one says so instead of a name field.
+   */
+  function checkInvite(joinId) {
+    const field = $('#name1').closest('.field');
+    const note = $('#joinNote');
+    field.hidden = true;
+    $('#startBtn').hidden = true;
+    $('#inviteGone').hidden = true;
+    note.textContent = 'Проверявам дали играта е активна…';
+    Net.probe(joinId, (result) => {
+      if (result === 'active') {
+        note.textContent = 'Поканен си на табла. Ти играеш с тъмните пулове — напиши името си.';
+        field.hidden = false;
+        $('#startBtn').hidden = false;
+        $('#name1').focus({ preventScroll: true });
+        return;
+      }
+      note.textContent = result === 'error'
+        ? 'Този браузър не може да играе онлайн. Отвори линка в Safari или Chrome.'
+        : 'Тази игра не е активна — домакинът я е затворил или вече е приключила. Помоли за нов линк.';
+      $('#inviteGone').hidden = false;
     });
   }
 
@@ -1798,7 +1950,19 @@
     $('#copyBtn').addEventListener('click', async () => {
       if (!online.myName) { nudge('#hostName'); return; }
       const input = $('#inviteLink');
-      try { await navigator.clipboard.writeText(input.value); } catch (_) { input.select(); document.execCommand('copy'); }
+      let ok = true;
+      try {
+        await navigator.clipboard.writeText(input.value);
+      } catch (_) {
+        // in-app browsers (Instagram, Messenger) often have no clipboard API;
+        // a read-only field cannot be selected on iPhone, so unlock it for a moment
+        input.readOnly = false;
+        input.focus();
+        input.setSelectionRange(0, input.value.length);
+        try { ok = document.execCommand('copy'); } catch (__) { ok = false; }
+        input.readOnly = true;
+      }
+      if (!ok) { toast(navigator.share ? 'Не успях да копирам — натисни „Изпрати…“' : 'Не успях да копирам — задръж върху линка и го копирай', 3200); return; }
       $('#copyBtn').textContent = 'Копирано ✓';
       setTimeout(() => { $('#copyBtn').textContent = 'Копирай'; }, 1600);
     });
@@ -1847,6 +2011,13 @@
       document.querySelectorAll('#menu [data-act="restart"]').forEach((b) => { b.hidden = online.role === 'guest'; });
       document.querySelectorAll('#menu [data-act="newmatch"]').forEach((b) => { b.hidden = !!online.role; });
       showOverlay('#menu');
+    });
+    const calm = $('#optCalm');
+    calm.checked = settings.calm;
+    calm.addEventListener('change', () => {
+      settings.calm = calm.checked;
+      document.documentElement.classList.toggle('calm', settings.calm);
+      store(SETTINGS_STORE, settings);
     });
     const sound = $('#optSound');
     const auto = $('#optAuto');
@@ -1897,6 +2068,7 @@
     const oldSettings = saved && saved.settings; // saved inside the game before version 2
     settings = { ...settings, ...(oldSettings || {}), ...(readStore(SETTINGS_STORE) || {}) };
     Sound.enabled = settings.sound;
+    document.documentElement.classList.toggle('calm', !!settings.calm);
     state = E.newMatch(['Играч 1', 'Играч 2'], 5);
     state = { ...state, board: { points: new Array(24).fill(0), bar: [0, 0], off: [15, 15] } };
     reconcile(state.board, { animate: false });
@@ -1921,6 +2093,17 @@
     $('#mainBtn').addEventListener('click', actMain);
     $('#undoBtn').addEventListener('click', () => request({ k: 'undo' }));
     document.addEventListener('keydown', onKey);
+    // back from another app: whatever was mid-flight lands at once
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden || !document.getAnimations) return;
+      for (const a of document.getAnimations()) {
+        const t = a.effect && a.effect.getComputedTiming();
+        if (t && t.iterations !== Infinity) { try { a.finish(); } catch (_) { /* gone */ } }
+      }
+      if (!busy && state) reconcile(state.board, { animate: false });
+      // anything missed while away comes back in one piece
+      if (online.role === 'guest' && online.connected) askResync();
+    });
     // back in the same game after a reload: go straight in
     const g = readStore(GUEST_STORE);
     if (inviteFromFriend && g && g.hostId === inviteFromFriend && g.name) {

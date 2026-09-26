@@ -31,7 +31,11 @@
 
   /** What one side accepts from the other: small messages, not too many of them. */
   const MAX_MESSAGE = 16000;
-  const BURST = 80; // messages per 2 s — a drag sends ~25 a second
+  /** Per kind, how many may arrive in 2 s — a drag sends ~25 a second. */
+  const LIMITS = { drag: 80, sel: 30, emo: 20, chat: 20, ping: 20 };
+  /** PeerJS refuses (silently) a JSON message this big or bigger. */
+  const PEER_LIMIT = 16300;
+  const byteLength = (msg) => new TextEncoder().encode(JSON.stringify(msg)).length;
 
   /**
    * One side of the connection. Callbacks: onMessage(msg), onStatus(status, detail)
@@ -46,7 +50,7 @@
     let lastSeen = 0;
     let retryTimer = 0;
     let status = '';
-    let bucket = { start: 0, n: 0 };
+    const buckets = {};
     const setStatus = (s, detail) => {
       if (s === status && !detail) return;
       status = s;
@@ -64,9 +68,16 @@
 
     function acceptable(msg) {
       if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return false;
-      const now = Date.now();
-      if (now - bucket.start > 2000) bucket = { start: now, n: 0 };
-      if (++bucket.n > BURST) return false;
+      // only the chatty messages are limited: a phone waking up from the
+      // background receives everything it missed at once, and a dropped move
+      // would leave its board out of step
+      const limit = LIMITS[msg.t];
+      if (limit) {
+        const now = Date.now();
+        let b = buckets[msg.t];
+        if (!b || now - b.start > 2000) b = buckets[msg.t] = { start: now, n: 0 };
+        if (++b.n > limit) return false;
+      }
       // the host's full game state is the only big message, and only the host sends it
       return role === 'guest' || JSON.stringify(msg).length <= MAX_MESSAGE;
     }
@@ -163,6 +174,7 @@
       get connected() { return !!(conn && conn.open) && status === 'connected'; },
       send(msg) {
         if (!conn || !conn.open) return false;
+        if (byteLength(msg) >= PEER_LIMIT) return false;
         try { conn.send(msg); return true; } catch (_) { return false; }
       },
       close() {
@@ -177,11 +189,35 @@
 
   root.TablaNet = {
     newId,
+    byteLength,
+    PEER_LIMIT,
     /** A secret only this guest's browser knows: it proves the seat is theirs when they come back. */
     newToken: () => newId().slice(6) + newId().slice(6),
     host: (id, handlers) => Link('host', { id, ...handlers }),
     join: (hostId, handlers) => Link('guest', { hostId, ...handlers }),
     /** A downloaded copy (file://) has no address a friend could open: invite them to the website. */
+    /**
+     * Is the game behind an invite open right now? Knocks without saying
+     * hello (the host ignores it) and hangs up. cb('active' | 'missing' | 'error').
+     */
+    probe(hostId, cb) {
+      if (!root.Peer) { setTimeout(() => cb('error')); return; }
+      let done = false;
+      const peer = new root.Peer(peerOptions());
+      const finish = (result) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        setTimeout(() => { try { peer.destroy(); } catch (_) { /* gone */ } }, 100);
+        cb(result);
+      };
+      const timer = setTimeout(() => finish('missing'), 12000);
+      peer.on('open', () => {
+        const c = peer.connect(hostId, { reliable: true, serialization: 'json' });
+        c.on('open', () => finish('active'));
+      });
+      peer.on('error', (e) => finish(e && e.type === 'peer-unavailable' ? 'missing' : 'error'));
+    },
     inviteLink: (id) => (root.location.protocol === 'file:' ? PUBLIC_URL : root.location.origin + root.location.pathname + root.location.search) + '#join=' + id,
     joinIdFromUrl() {
       const m = /[#&]join=([a-z0-9-]+)/.exec(root.location.hash);

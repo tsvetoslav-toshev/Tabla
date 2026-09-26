@@ -86,6 +86,10 @@
     <h1 id="setupTitle">Табла</h1>
     <p class="sub">за двама — на едно устройство или онлайн</p>
     <p class="join-note" id="joinNote" hidden>Поканен си на табла. Ти играеш с тъмните пулове — напиши името си.</p>
+    <div class="row invite-gone" id="inviteGone" hidden>
+      <button class="btn ghost" type="button" id="recheckBtn">Провери пак</button>
+      <button class="btn primary" type="button" id="toStartBtn">Към началото</button>
+    </div>
     <form id="setupForm" autocomplete="off">
       <label class="field host-only">
         <span class="token light" aria-hidden="true"></span>
@@ -127,6 +131,7 @@
     <button class="btn ghost wide" data-act="rename">Смени името</button>
     <label class="toggle"><input type="checkbox" id="optSound"><span class="sw"></span>Звук</label>
     <label class="toggle"><input type="checkbox" id="optAuto"><span class="sw"></span>Край на хода без „Готово“</label>
+    <label class="toggle"><input type="checkbox" id="optCalm"><span class="sw"></span>Намалени анимации</label>
     <button class="btn ghost wide danger" data-act="restart" data-confirm="Натисни пак, за да започнеш играта отначало">Играта отначало</button>
     <button class="btn ghost wide danger" data-act="newmatch" data-confirm="Натисни пак — резултатът се губи">Нов мач</button>
     <button class="btn ghost wide danger" data-act="leave" id="leaveBtn" data-confirm="Натисни пак, за да излезеш" hidden>Напусни онлайн играта</button>
