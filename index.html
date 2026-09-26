@@ -1325,7 +1325,11 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
 
   /** What one side accepts from the other: small messages, not too many of them. */
   const MAX_MESSAGE = 16000;
-  const BURST = 80; // messages per 2 s — a drag sends ~25 a second
+  /** Per kind, how many may arrive in 2 s — a drag sends ~25 a second. */
+  const LIMITS = { drag: 80, sel: 30, emo: 20, chat: 20, ping: 20 };
+  /** PeerJS refuses (silently) a JSON message this big or bigger. */
+  const PEER_LIMIT = 16300;
+  const byteLength = (msg) => new TextEncoder().encode(JSON.stringify(msg)).length;
 
   /**
    * One side of the connection. Callbacks: onMessage(msg), onStatus(status, detail)
@@ -1340,7 +1344,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     let lastSeen = 0;
     let retryTimer = 0;
     let status = '';
-    let bucket = { start: 0, n: 0 };
+    const buckets = {};
     const setStatus = (s, detail) => {
       if (s === status && !detail) return;
       status = s;
@@ -1358,9 +1362,16 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
 
     function acceptable(msg) {
       if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return false;
-      const now = Date.now();
-      if (now - bucket.start > 2000) bucket = { start: now, n: 0 };
-      if (++bucket.n > BURST) return false;
+      // only the chatty messages are limited: a phone waking up from the
+      // background receives everything it missed at once, and a dropped move
+      // would leave its board out of step
+      const limit = LIMITS[msg.t];
+      if (limit) {
+        const now = Date.now();
+        let b = buckets[msg.t];
+        if (!b || now - b.start > 2000) b = buckets[msg.t] = { start: now, n: 0 };
+        if (++b.n > limit) return false;
+      }
       // the host's full game state is the only big message, and only the host sends it
       return role === 'guest' || JSON.stringify(msg).length <= MAX_MESSAGE;
     }
@@ -1457,6 +1468,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       get connected() { return !!(conn && conn.open) && status === 'connected'; },
       send(msg) {
         if (!conn || !conn.open) return false;
+        if (byteLength(msg) >= PEER_LIMIT) return false;
         try { conn.send(msg); return true; } catch (_) { return false; }
       },
       close() {
@@ -1471,6 +1483,8 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
 
   root.TablaNet = {
     newId,
+    byteLength,
+    PEER_LIMIT,
     /** A secret only this guest's browser knows: it proves the seat is theirs when they come back. */
     newToken: () => newId().slice(6) + newId().slice(6),
     host: (id, handlers) => Link('host', { id, ...handlers }),
@@ -1771,7 +1785,31 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
    * change place move, so one call animates a move, a hit, an undo of several
    * moves or a whole new game alike.
    */
+  /** A board the screen can show: 15 checkers a side, all in real places. */
+  const boardOk = (b) => !!b && Array.isArray(b.points) && b.points.length === 24
+    && [LIGHT, DARK].every((p) => KEYS.reduce((n, k) => n + targetCount(b, p, k), 0) === E.CHECKERS);
+
+  /** All 30 checker elements back in the trays' stacks, whatever went wrong before. */
+  function stacksBroken() {
+    return [LIGHT, DARK].some((p) => KEYS.reduce((n, k) => {
+      const arr = stacks[p].get(k);
+      return arr.includes(undefined) ? Infinity : n + arr.length;
+    }, 0) !== E.CHECKERS);
+  }
+  function rebuildStacks() {
+    for (const p of [LIGHT, DARK]) {
+      for (const key of KEYS) stacks[p].set(key, []);
+      const own = [...document.querySelectorAll('#checkers .checker')].filter((el) => el._p === p);
+      stacks[p].get('off').push(...own);
+    }
+  }
+
   function reconcile(board, { animate: wantAnimate = true, mover = null, hitDelay = 0, stagger = 0, dragged = null, onLand } = {}) {
+    if (!boardOk(board)) {
+      console.error('reconcile: not a board', board);
+      return Promise.resolve();
+    }
+    if (stacksBroken()) rebuildStacks();
     const animate = wantAnimate && !document.hidden; // nobody is looking: just put them in place
     const moved = new Set();
     for (const p of [LIGHT, DARK]) {
@@ -1784,7 +1822,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       for (const key of KEYS) {
         const arr = stacks[p].get(key);
         const t = targetCount(board, p, key);
-        while (arr.length < t) {
+        while (arr.length < t && surplus.length) {
           const el = surplus.shift();
           arr.push(el);
           moved.add(el);
@@ -1828,8 +1866,8 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
   }
 
   const topChecker = (p, loc) => {
-    const arr = stacks[p].get(keyOf(loc));
-    return arr[arr.length - 1];
+    const arr = stacks[p] && stacks[p].get(keyOf(loc));
+    return arr ? arr[arr.length - 1] : undefined; // a place that does not exist has no checker
   };
 
   // ---------- dice ----------
@@ -2016,6 +2054,8 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     fairWarnings: 0,
   };
   let awaitTimer = 0;
+  let actSeq = 0; // host: acts sent so far; guest: the last act shown
+  let resyncAsked = 0;
   let remoteDrag = null; // the checker the other player is dragging right now
   let remoteSel = null; // the checker the other player has picked up
   let localDropped = null; // our checker, dropped on a target, waiting for the move to be played
@@ -2224,8 +2264,11 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     chain = chain.then(async () => {
       busy = true;
       selected = null;
-      refresh();
-      try { await fn(); } catch (e) { console.error(e); } finally { busy = false; refresh(); }
+      try { refresh(); await fn(); } catch (e) { console.error(e); }
+      finally {
+        busy = false;
+        try { refresh(); } catch (e) { console.error(e); }
+      }
     });
     return chain;
   }
@@ -2343,7 +2386,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       history = [];
       rollLog = {};
     }
-    if (online.role === 'host') send({ t: 'act', a: act, state: next });
+    if (online.role === 'host') send({ t: 'act', a: act, state: next, seq: ++actSeq });
     return present(prev, act, next);
   }
 
@@ -2416,6 +2459,14 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
         break;
       }
       case 'move': {
+        if (online.role === 'guest' && !checkedPath(prev, a.path)) {
+          // this screen is out of step with the host: take the host's board as it is
+          state = next;
+          syncDice();
+          await reconcile(next.board);
+          send({ t: 'resync' });
+          break;
+        }
         const mover = prev.turn;
         let s = prev;
         for (let k = 0; k < a.path.length; k++) {
@@ -2433,6 +2484,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
           updateCards();
         }
         state = next;
+        await reconcile(next.board); // nothing to do when the replay matched the host
         if (next.phase === 'gameover' || next.phase === 'matchover') {
           await wait(400);
           showOver(prev.score);
@@ -2697,6 +2749,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
   // The other player's hand, seen from this side of the table (mirrored).
   function onRemoteDrag(msg) {
     if (busy || state.phase !== 'move' || myTurn()) return;
+    if (!((typeof msg.from === 'number' && msg.from >= 0 && msg.from < 24) || msg.from === BAR)) return;
     const el = topChecker(state.turn, msg.from);
     if (!el) return;
     if (remoteDrag && remoteDrag.el !== el) settleRemoteDrag();
@@ -2829,8 +2882,15 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     return token === online.guestToken;
   }
 
+  /**
+   * The whole game for the guest. PeerJS refuses a message of 16 KB or more,
+   * so the oldest chat lines are left out when the chat is long.
+   */
   function sendSync(fresh) {
-    send({ t: 'sync', state, fresh: !!fresh, hostName: online.myName, chat: chatLog });
+    let chat = chatLog.slice(-60);
+    const msg = () => ({ t: 'sync', state, fresh: !!fresh, hostName: online.myName, chat, seq: actSeq });
+    while (chat.length && Net.byteLength(msg()) > Net.PEER_LIMIT - 1300) chat = chat.slice(1);
+    send(msg());
   }
 
   // ---------- online: fair dice ----------
@@ -3113,7 +3173,16 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
         if (online.role !== 'guest') break;
         online.awaiting = false;
         clearTimeout(awaitTimer);
+        if (typeof msg.seq === 'number' && msg.seq !== actSeq + 1) {
+          // an act went missing: ask for the whole game instead of guessing
+          askResync();
+          break;
+        }
+        if (typeof msg.seq === 'number') actSeq = msg.seq;
         enqueue(() => present(state, msg.a, msg.state));
+        break;
+      case 'resync':
+        if (online.role === 'host') enqueue(() => sendSync(false));
         break;
       case 'commit':
         if (online.role === 'guest') onCommit(msg);
@@ -3134,7 +3203,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
         settleRemoteDrag();
         break;
       case 'sel':
-        remoteSel = msg.from;
+        remoteSel = (typeof msg.from === 'number' && msg.from >= 0 && msg.from < 24) || msg.from === BAR ? msg.from : null;
         if (!busy) updateHighlights();
         break;
       case 'bye':
@@ -3177,7 +3246,18 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     online.link = Net.join(hostId, { onMessage: onNetMessage, onStatus: onNetStatus });
   }
 
+  function askResync() {
+    const now = Date.now();
+    if (now - resyncAsked < 1500) return;
+    resyncAsked = now;
+    send({ t: 'resync' });
+  }
+
   function applySync(msg) {
+    if (!msg.state || !boardOk(msg.state.board)) return;
+    if (typeof msg.seq === 'number') actSeq = msg.seq;
+    settleRemoteDrag();
+    localDropped = null;
     online.awaiting = false;
     online.left = false;
     online.peerName = cleanName(msg.hostName || msg.state.players[LIGHT].name, 'Приятел');
@@ -3241,6 +3321,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     chatLog = [];
     unread = 0;
     fair.commit = '';
+    actSeq = 0;
     if (wasGuest) {
       store(GUEST_STORE, null);
       started = false;
@@ -3331,10 +3412,12 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       if ($('#setupForm').classList.contains('joining')) {
         const mine = cleanName($('#name1').value, '');
         if (!mine) { nudge('#name1'); return; }
+        if (online.role) return; // already joining
         $('#setupForm').classList.remove('joining');
         joinOnline(joinId, mine);
         return;
       }
+      if (online.role === 'guest') return; // a second tap after joining
       startMatch([n0, n1], matchLength);
     });
     $('#recheckBtn').addEventListener('click', () => checkInvite(joinId));
@@ -3539,6 +3622,9 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
         const t = a.effect && a.effect.getComputedTiming();
         if (t && t.iterations !== Infinity) { try { a.finish(); } catch (_) { /* gone */ } }
       }
+      if (!busy && state) reconcile(state.board, { animate: false });
+      // anything missed while away comes back in one piece
+      if (online.role === 'guest' && online.connected) askResync();
     });
     // back in the same game after a reload: go straight in
     const g = readStore(GUEST_STORE);

@@ -103,11 +103,35 @@ async function settled(a, b, ms = 20000) {
   await host.screenshot({ path: path.join(out, 'online-host.png') });
   await guest.screenshot({ path: path.join(out, 'online-guest.png') });
 
+  // a burst of chatter (what a phone gets when it wakes up from the background)
+  // must never cost the guest a move: 150 drag messages, then the host's turn
+  for (let i = 0; i < 20; i++) {
+    s = await settled(host, guest);
+    if (s.turn === 0 && s.phase === 'move' && s.remaining.length) break;
+    const p = pageFor(s.turn);
+    const mv = await p.evaluate(() => window.__tabla.E.currentMoves(window.__tabla.state)[0]);
+    if (s.phase === 'move' && (!mv || !s.remaining.length)) await p.click('#mainBtn', { force: true });
+    else if (s.phase === 'move') await p.evaluate((m) => window.__tabla.request({ k: 'move', path: [m] }), mv);
+    else await p.click('#mainBtn', { force: true });
+  }
+  await host.evaluate(() => {
+    const t = window.__tabla;
+    for (let i = 0; i < 150; i++) t.online.link.send({ t: 'drag', from: 999, x: 10, y: 10 });
+    const m = t.E.currentMoves(t.state)[0];
+    if (m) t.request({ k: 'move', path: [m] });
+  });
+  s = await settled(host, guest);
+  const onBoard = await guest.evaluate(() => [...document.querySelectorAll('#checkers .checker')].filter((el) => !el.classList.contains('slab')).length);
+  const expected = 30 - s.board.off[0] - s.board.off[1];
+  if (onBoard !== expected) throw new Error(`after a burst the guest shows ${onBoard} checkers on the board, expected ${expected}`);
+  console.log('burst of 150 messages: guest still in step');
+
   // chat: text only, both ways; markup arrives as plain text
   await guest.click('#chatBtn');
   await guest.fill('#chatInput', '<b>Здрасти</b> <img src=x onerror=alert(1)>');
   await guest.press('#chatInput', 'Enter');
-  await host.waitForFunction(() => window.__tabla.chat.length === 1, null, { timeout: 10000 });
+  await host.waitForFunction(() => window.__tabla.chat.length === 1, null, { timeout: 10000 })
+    .catch(async (e) => { console.log('host chat', await host.evaluate(() => JSON.stringify(window.__tabla.chat)), 'guest chat', await guest.evaluate(() => JSON.stringify(window.__tabla.chat)), 'guest input', await guest.inputValue('#chatInput')); throw e; });
   if (!(await host.isVisible('.bubble'))) throw new Error('no chat bubble on the host');
   if (await host.locator('#chatList b, #chatList img, .bubble b, .bubble img').count()) throw new Error('chat markup was rendered as HTML');
   const badge = await host.textContent('#chatBadge');

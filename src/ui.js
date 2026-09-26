@@ -263,7 +263,31 @@
    * change place move, so one call animates a move, a hit, an undo of several
    * moves or a whole new game alike.
    */
+  /** A board the screen can show: 15 checkers a side, all in real places. */
+  const boardOk = (b) => !!b && Array.isArray(b.points) && b.points.length === 24
+    && [LIGHT, DARK].every((p) => KEYS.reduce((n, k) => n + targetCount(b, p, k), 0) === E.CHECKERS);
+
+  /** All 30 checker elements back in the trays' stacks, whatever went wrong before. */
+  function stacksBroken() {
+    return [LIGHT, DARK].some((p) => KEYS.reduce((n, k) => {
+      const arr = stacks[p].get(k);
+      return arr.includes(undefined) ? Infinity : n + arr.length;
+    }, 0) !== E.CHECKERS);
+  }
+  function rebuildStacks() {
+    for (const p of [LIGHT, DARK]) {
+      for (const key of KEYS) stacks[p].set(key, []);
+      const own = [...document.querySelectorAll('#checkers .checker')].filter((el) => el._p === p);
+      stacks[p].get('off').push(...own);
+    }
+  }
+
   function reconcile(board, { animate: wantAnimate = true, mover = null, hitDelay = 0, stagger = 0, dragged = null, onLand } = {}) {
+    if (!boardOk(board)) {
+      console.error('reconcile: not a board', board);
+      return Promise.resolve();
+    }
+    if (stacksBroken()) rebuildStacks();
     const animate = wantAnimate && !document.hidden; // nobody is looking: just put them in place
     const moved = new Set();
     for (const p of [LIGHT, DARK]) {
@@ -276,7 +300,7 @@
       for (const key of KEYS) {
         const arr = stacks[p].get(key);
         const t = targetCount(board, p, key);
-        while (arr.length < t) {
+        while (arr.length < t && surplus.length) {
           const el = surplus.shift();
           arr.push(el);
           moved.add(el);
@@ -320,8 +344,8 @@
   }
 
   const topChecker = (p, loc) => {
-    const arr = stacks[p].get(keyOf(loc));
-    return arr[arr.length - 1];
+    const arr = stacks[p] && stacks[p].get(keyOf(loc));
+    return arr ? arr[arr.length - 1] : undefined; // a place that does not exist has no checker
   };
 
   // ---------- dice ----------
@@ -508,6 +532,8 @@
     fairWarnings: 0,
   };
   let awaitTimer = 0;
+  let actSeq = 0; // host: acts sent so far; guest: the last act shown
+  let resyncAsked = 0;
   let remoteDrag = null; // the checker the other player is dragging right now
   let remoteSel = null; // the checker the other player has picked up
   let localDropped = null; // our checker, dropped on a target, waiting for the move to be played
@@ -716,8 +742,11 @@
     chain = chain.then(async () => {
       busy = true;
       selected = null;
-      refresh();
-      try { await fn(); } catch (e) { console.error(e); } finally { busy = false; refresh(); }
+      try { refresh(); await fn(); } catch (e) { console.error(e); }
+      finally {
+        busy = false;
+        try { refresh(); } catch (e) { console.error(e); }
+      }
     });
     return chain;
   }
@@ -835,7 +864,7 @@
       history = [];
       rollLog = {};
     }
-    if (online.role === 'host') send({ t: 'act', a: act, state: next });
+    if (online.role === 'host') send({ t: 'act', a: act, state: next, seq: ++actSeq });
     return present(prev, act, next);
   }
 
@@ -908,6 +937,14 @@
         break;
       }
       case 'move': {
+        if (online.role === 'guest' && !checkedPath(prev, a.path)) {
+          // this screen is out of step with the host: take the host's board as it is
+          state = next;
+          syncDice();
+          await reconcile(next.board);
+          send({ t: 'resync' });
+          break;
+        }
         const mover = prev.turn;
         let s = prev;
         for (let k = 0; k < a.path.length; k++) {
@@ -925,6 +962,7 @@
           updateCards();
         }
         state = next;
+        await reconcile(next.board); // nothing to do when the replay matched the host
         if (next.phase === 'gameover' || next.phase === 'matchover') {
           await wait(400);
           showOver(prev.score);
@@ -1189,6 +1227,7 @@
   // The other player's hand, seen from this side of the table (mirrored).
   function onRemoteDrag(msg) {
     if (busy || state.phase !== 'move' || myTurn()) return;
+    if (!((typeof msg.from === 'number' && msg.from >= 0 && msg.from < 24) || msg.from === BAR)) return;
     const el = topChecker(state.turn, msg.from);
     if (!el) return;
     if (remoteDrag && remoteDrag.el !== el) settleRemoteDrag();
@@ -1321,8 +1360,15 @@
     return token === online.guestToken;
   }
 
+  /**
+   * The whole game for the guest. PeerJS refuses a message of 16 KB or more,
+   * so the oldest chat lines are left out when the chat is long.
+   */
   function sendSync(fresh) {
-    send({ t: 'sync', state, fresh: !!fresh, hostName: online.myName, chat: chatLog });
+    let chat = chatLog.slice(-60);
+    const msg = () => ({ t: 'sync', state, fresh: !!fresh, hostName: online.myName, chat, seq: actSeq });
+    while (chat.length && Net.byteLength(msg()) > Net.PEER_LIMIT - 1300) chat = chat.slice(1);
+    send(msg());
   }
 
   // ---------- online: fair dice ----------
@@ -1605,7 +1651,16 @@
         if (online.role !== 'guest') break;
         online.awaiting = false;
         clearTimeout(awaitTimer);
+        if (typeof msg.seq === 'number' && msg.seq !== actSeq + 1) {
+          // an act went missing: ask for the whole game instead of guessing
+          askResync();
+          break;
+        }
+        if (typeof msg.seq === 'number') actSeq = msg.seq;
         enqueue(() => present(state, msg.a, msg.state));
+        break;
+      case 'resync':
+        if (online.role === 'host') enqueue(() => sendSync(false));
         break;
       case 'commit':
         if (online.role === 'guest') onCommit(msg);
@@ -1626,7 +1681,7 @@
         settleRemoteDrag();
         break;
       case 'sel':
-        remoteSel = msg.from;
+        remoteSel = (typeof msg.from === 'number' && msg.from >= 0 && msg.from < 24) || msg.from === BAR ? msg.from : null;
         if (!busy) updateHighlights();
         break;
       case 'bye':
@@ -1669,7 +1724,18 @@
     online.link = Net.join(hostId, { onMessage: onNetMessage, onStatus: onNetStatus });
   }
 
+  function askResync() {
+    const now = Date.now();
+    if (now - resyncAsked < 1500) return;
+    resyncAsked = now;
+    send({ t: 'resync' });
+  }
+
   function applySync(msg) {
+    if (!msg.state || !boardOk(msg.state.board)) return;
+    if (typeof msg.seq === 'number') actSeq = msg.seq;
+    settleRemoteDrag();
+    localDropped = null;
     online.awaiting = false;
     online.left = false;
     online.peerName = cleanName(msg.hostName || msg.state.players[LIGHT].name, 'Приятел');
@@ -1733,6 +1799,7 @@
     chatLog = [];
     unread = 0;
     fair.commit = '';
+    actSeq = 0;
     if (wasGuest) {
       store(GUEST_STORE, null);
       started = false;
@@ -1823,10 +1890,12 @@
       if ($('#setupForm').classList.contains('joining')) {
         const mine = cleanName($('#name1').value, '');
         if (!mine) { nudge('#name1'); return; }
+        if (online.role) return; // already joining
         $('#setupForm').classList.remove('joining');
         joinOnline(joinId, mine);
         return;
       }
+      if (online.role === 'guest') return; // a second tap after joining
       startMatch([n0, n1], matchLength);
     });
     $('#recheckBtn').addEventListener('click', () => checkInvite(joinId));
@@ -2031,6 +2100,9 @@
         const t = a.effect && a.effect.getComputedTiming();
         if (t && t.iterations !== Infinity) { try { a.finish(); } catch (_) { /* gone */ } }
       }
+      if (!busy && state) reconcile(state.board, { animate: false });
+      // anything missed while away comes back in one piece
+      if (online.role === 'guest' && online.connected) askResync();
     });
     // back in the same game after a reload: go straight in
     const g = readStore(GUEST_STORE);
