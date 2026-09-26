@@ -56,9 +56,11 @@ svg { display: block; }
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   grid-template-areas: "top" "board" "bottom" "controls";
-  transition: opacity var(--t-slow) var(--ease-out), filter var(--t-slow) var(--ease-out);
+  transition: opacity var(--t-slow) var(--ease-out);
 }
-#app[aria-hidden="true"] { filter: blur(3px) brightness(0.7); }
+/* no blur on the whole app behind a panel: on iPhone a filter over the board's
+   layers can make checkers vanish; the overlay's dark backdrop does the job */
+#app[aria-hidden="true"] { opacity: 0.55; }
 #card1 { grid-area: top; }
 #card0 { grid-area: bottom; }
 #boardWrap { grid-area: board; position: relative; display: grid; place-items: center; min-height: 0; }
@@ -87,8 +89,10 @@ svg { display: block; }
   width: 1000px; height: 780px;
   transform-origin: 0 0;
   touch-action: none;
-  filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.55));
 }
+/* the board's shadow lives outside the board: a filter on the board itself
+   would sit over every checker layer (see #app above) */
+#boardBox { border-radius: 2.2% / 2.82%; box-shadow: 0 calc(18px * var(--s, 1)) calc(30px * var(--s, 1)) rgba(0, 0, 0, 0.55); }
 #boardArt { position: absolute; inset: 0; }
 
 /* ---------- player cards ---------- */
@@ -167,7 +171,6 @@ svg { display: block; }
 #checkers { position: absolute; inset: 0; }
 .checker {
   position: absolute; left: 0; top: 0; width: 58px; height: 58px;
-  will-change: transform;
   pointer-events: none;
 }
 .checker .lift { position: absolute; inset: 0; transition: transform var(--t-med) var(--ease-spring); }
@@ -177,7 +180,7 @@ svg { display: block; }
 }
 .checker::before { /* shadow on the felt; grows while the checker is in the air */
   content: ""; position: absolute; inset: 6px 4px 0 6px; border-radius: 50%;
-  background: rgba(0, 0, 0, 0.5); filter: blur(4px);
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.3) 60%, transparent);
   transform: translate(2px, 4px);
   transition: transform var(--t-med) var(--ease-out), opacity var(--t-med) var(--ease-out);
 }
@@ -237,10 +240,10 @@ svg { display: block; }
 
 /* ---------- dice ---------- */
 #dice { position: absolute; inset: 0; pointer-events: none; }
-.die { position: absolute; left: 0; top: 0; width: 56px; height: 56px; transform-style: preserve-3d; opacity: 0; }
+.die { position: absolute; left: 0; top: 0; width: 56px; height: 56px; opacity: 0; }
 .die .scale { position: absolute; inset: 0; perspective: 700px; /* each die looks straight on, wherever it lands */ transition: transform var(--t-med) var(--ease-out), opacity var(--t-med) var(--ease-out); }
 .die.used .scale { transform: scale(0.78); opacity: 0.32; }
-.die .shadow { position: absolute; inset: 8px; border-radius: 12px; background: rgba(0, 0, 0, 0.55); filter: blur(6px); transform: translate(4px, 8px) translateZ(-40px); }
+.die .shadow { position: absolute; inset: 8px; border-radius: 12px; background: radial-gradient(closest-side, rgba(0, 0, 0, 0.55), transparent); transform: translate(4px, 8px); }
 .cube { position: absolute; inset: 0; transform-style: preserve-3d; }
 .cube .f {
   position: absolute; inset: 0; border-radius: 9px;
@@ -395,7 +398,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
 @keyframes ring { 50% { opacity: 0.95; } }
 @keyframes glow { 50% { opacity: 0.45; } }
 @keyframes spotIn { from { scale: 0.4; opacity: 0; } }
-@keyframes spin { to { rotate: 360deg; } }
+@keyframes spin { to { transform: rotate(360deg); } }
 @keyframes blink { 50% { opacity: 0.3; } }
 @keyframes ripple { from { transform: scale(0.4); opacity: 0.9; } to { transform: scale(1.2); opacity: 0; } }
 @keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.5); } 100% { transform: scale(1); } }
@@ -467,7 +470,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
   background: linear-gradient(180deg, #3a2b20, #281d16); border: 1px solid rgba(231, 184, 92, 0.45);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); font-size: 0.95rem; cursor: pointer; overflow-wrap: anywhere;
 }
-.bubble.from-bottom { translate: 0 -100%; border-bottom-left-radius: 4px; }
+.bubble.from-bottom { margin-top: 0; border-bottom-left-radius: 4px; }
 .bubble.from-top { border-top-left-radius: 4px; }
 .chat {
   position: fixed; z-index: 40; right: 12px; top: 12px; bottom: 12px; width: min(340px, calc(100vw - 24px));
@@ -520,4 +523,8 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
   .chat-btn span { display: none; }
 }
 /* "Намалени анимации" in the menu: short transitions, no endless pulsing */
-.calm *, .calm *::before, .calm *::after { animation-iteration-count: 1 !important; transition-duration: 140ms !important; }
+.calm .checker.lifted .lift, .calm .checker.dragging .lift { transform: scale(1.06); }
+.calm .btn.primary.pulse:not(:disabled), .calm .player.active::after, .calm .checker.movable .face::after,
+.calm .hl.on, .calm #rollHint .ghost span, .calm .logo-die, .calm .pulse-ring span, .calm .controls .net::before { animation: none !important; }
+.calm .pulse-ring span { opacity: 0.5; }
+.calm .spinner { animation-duration: 1.6s; } /* keeps turning: the only sign that it is still connecting */

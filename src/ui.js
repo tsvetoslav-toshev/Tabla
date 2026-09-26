@@ -224,17 +224,29 @@
     el.style.transform = tr(pos);
   }
 
+  /**
+   * Resolves when an animation ends — or a little after it should have. A
+   * hidden page (an iPhone app switched away from the in-app browser) pauses
+   * animations, and the game must never wait on one forever.
+   */
+  function settle(a, ms) {
+    return new Promise((res) => {
+      const t = setTimeout(() => { try { a.finish(); } catch (_) { /* already gone */ } res(); }, ms + 400);
+      a.finished.then(() => { clearTimeout(t); res(); }, () => { clearTimeout(t); res(); });
+    });
+  }
+
   function flyTo(el, pos, { delay = 0, onLand, fromDrag = false } = {}) {
     const from = { x: el._x, y: el._y };
     place(el, pos);
     const dist = Math.hypot(pos.x - from.x, pos.y - from.y);
-    const d = dur(Math.min(760, 300 + dist * 0.42));
+    const d = reduced.matches ? Math.min(380, 200 + dist * 0.2) : Math.min(760, 300 + dist * 0.42);
     const dl = dur(delay);
     el.style.zIndex = String(600 + Math.round(delay / 10));
-    if (!fromDrag) setTimeout(() => el.classList.add('lifted'), dl);
+    if (!fromDrag && !reduced.matches) setTimeout(() => el.classList.add('lifted'), dl);
     setTimeout(() => el.classList.remove('lifted', 'dragging'), dl + d * 0.72);
-    const a = el.animate([{ transform: tr(from) }, { transform: tr(pos) }], { duration: d, delay: dl, easing: EASE_IN_OUT, fill: 'backwards' });
-    return a.finished.catch(() => {}).then(() => {
+    const a = el.animate([{ transform: tr(from) }, { transform: tr(pos) }], { duration: d, delay: dl, easing: reduced.matches ? EASE_OUT : EASE_IN_OUT, fill: 'backwards' });
+    return settle(a, d + dl).then(() => {
       el.style.zIndex = String(el._z);
       if (onLand) onLand(el);
     });
@@ -243,7 +255,7 @@
   function slideTo(el, pos) {
     const from = { x: el._x, y: el._y };
     place(el, pos);
-    return el.animate([{ transform: tr(from) }, { transform: tr(pos) }], { duration: dur(220), easing: EASE_OUT }).finished.catch(() => {});
+    return settle(el.animate([{ transform: tr(from) }, { transform: tr(pos) }], { duration: dur(220), easing: EASE_OUT }), dur(220));
   }
 
   /**
@@ -251,7 +263,8 @@
    * change place move, so one call animates a move, a hit, an undo of several
    * moves or a whole new game alike.
    */
-  function reconcile(board, { animate = true, mover = null, hitDelay = 0, stagger = 0, dragged = null, onLand } = {}) {
+  function reconcile(board, { animate: wantAnimate = true, mover = null, hitDelay = 0, stagger = 0, dragged = null, onLand } = {}) {
+    const animate = wantAnimate && !document.hidden; // nobody is looking: just put them in place
     const moved = new Set();
     for (const p of [LIGHT, DARK]) {
       const surplus = [];
@@ -404,6 +417,7 @@
   /** The throw: dice fly in from the thrower's edge, bounce and tumble to their numbers. */
   function throwDice(specs, extraFrom) {
     diceEls.forEach(hideDie);
+    if (reduced.matches) return settleDiceCalmly(specs, extraFrom);
     const jobs = [];
     const D = dur(950);
     specs.forEach((s, i) => {
@@ -414,11 +428,11 @@
       el.style.opacity = '1';
       if (s.extra) {
         // the second pair of a double appears once the first two have landed
-        jobs.push(el.animate([
+        jobs.push(settle(el.animate([
           { opacity: 0, transform: dieTr(s.x, s.y, 0.3) },
           { opacity: 1, transform: dieTr(s.x, s.y, 1.15), offset: 0.6 },
           { opacity: 1, transform: dieTr(s.x, s.y) },
-        ], { duration: dur(380), delay: D + dur(90 * (i - 1)), easing: EASE_OUT, fill: 'backwards' }).finished.catch(() => {}));
+        ], { duration: dur(380), delay: D + dur(90 * (i - 1)), easing: EASE_OUT, fill: 'backwards' }), D + 800));
         return;
       }
       const from = s.from !== undefined ? s.from : extraFrom;
@@ -427,13 +441,13 @@
       const sy = atBottom(from) ? G.BOTTOM + 30 : G.TOP - 30;
       const ox = s.x + (Math.random() * 30 - 15);
       const oy = s.y + dir * 34;
-      jobs.push(el.animate([
+      jobs.push(settle(el.animate([
         { opacity: 0, transform: dieTr(sx, sy, 0.8) },
         { opacity: 1, transform: dieTr((sx + s.x) / 2, (sy + s.y) / 2, 1.35), offset: 0.3 },
         { transform: dieTr(ox, oy, 1), offset: 0.58 },
         { transform: dieTr(s.x, s.y - dir * 6, 1.1), offset: 0.76 },
         { transform: dieTr(s.x, s.y, 1) },
-      ], { duration: D, easing: 'cubic-bezier(0.25, 0.6, 0.3, 1)' }).finished.catch(() => {}));
+      ], { duration: D, easing: 'cubic-bezier(0.25, 0.6, 0.3, 1)' }), D));
       const spinX = -(720 + Math.floor(Math.random() * 3) * 90);
       const spinY = -(540 + Math.floor(Math.random() * 3) * 90);
       const spinZ = Math.random() < 0.5 ? -270 : 270;
@@ -444,6 +458,27 @@
     });
     Sound.rattle(D * 0.6);
     setTimeout(() => Sound.land(), D * 0.58);
+    return Promise.all(jobs);
+  }
+
+  /** "Намалени анимации": the dice just settle into place, no tumbling. */
+  function settleDiceCalmly(specs, extraFrom) {
+    const jobs = specs.map((s, i) => {
+      const el = diceEls[i];
+      el._tilt = Math.random() * 16 - 8;
+      setDie(el, s);
+      el._shown = true;
+      el.style.opacity = '1';
+      const from = s.from !== undefined ? s.from : extraFrom;
+      const dy = atBottom(from) ? 14 : -14;
+      const delay = s.extra ? 260 + 60 * (i - 2) : 60 * i;
+      return settle(el.animate([
+        { opacity: 0, transform: dieTr(s.x, s.y + dy, 0.92) },
+        { opacity: 1, transform: dieTr(s.x, s.y) },
+      ], { duration: 300, delay, easing: EASE_OUT, fill: 'backwards' }), 300 + delay);
+    });
+    Sound.rattle(220);
+    setTimeout(() => Sound.land(), 220);
     return Promise.all(jobs);
   }
 
@@ -1198,6 +1233,7 @@
     const box = $('#boardBox');
     box.style.width = G.W * scale + 'px';
     box.style.height = G.H * scale + 'px';
+    box.style.setProperty('--s', String(scale));
     $('#board').style.transform = `scale(${scale})`;
   }
 
@@ -1455,8 +1491,8 @@
     b.className = 'bubble ' + (atBottom(p) ? 'from-bottom' : 'from-top');
     b.textContent = text;
     b.style.left = Math.min(innerWidth - 16, Math.max(16, r.left + 24)) + 'px';
-    b.style.top = (atBottom(p) ? r.top - 8 : r.bottom + 8) + 'px';
     document.body.appendChild(b);
+    b.style.top = (atBottom(p) ? r.top - 8 - b.offsetHeight : r.bottom + 8) + 'px';
     b.addEventListener('click', () => setChatOpen(true));
     b.animate([
       { opacity: 0, transform: `translateY(${atBottom(p) ? 10 : -10}px) scale(0.9)` },
@@ -1816,7 +1852,19 @@
     $('#copyBtn').addEventListener('click', async () => {
       if (!online.myName) { nudge('#hostName'); return; }
       const input = $('#inviteLink');
-      try { await navigator.clipboard.writeText(input.value); } catch (_) { input.select(); document.execCommand('copy'); }
+      let ok = true;
+      try {
+        await navigator.clipboard.writeText(input.value);
+      } catch (_) {
+        // in-app browsers (Instagram, Messenger) often have no clipboard API;
+        // a read-only field cannot be selected on iPhone, so unlock it for a moment
+        input.readOnly = false;
+        input.focus();
+        input.setSelectionRange(0, input.value.length);
+        try { ok = document.execCommand('copy'); } catch (__) { ok = false; }
+        input.readOnly = true;
+      }
+      if (!ok) { toast(navigator.share ? 'Не успях да копирам — натисни „Изпрати…“' : 'Не успях да копирам — задръж върху линка и го копирай', 3200); return; }
       $('#copyBtn').textContent = 'Копирано ✓';
       setTimeout(() => { $('#copyBtn').textContent = 'Копирай'; }, 1600);
     });
@@ -1947,6 +1995,14 @@
     $('#mainBtn').addEventListener('click', actMain);
     $('#undoBtn').addEventListener('click', () => request({ k: 'undo' }));
     document.addEventListener('keydown', onKey);
+    // back from another app: whatever was mid-flight lands at once
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden || !document.getAnimations) return;
+      for (const a of document.getAnimations()) {
+        const t = a.effect && a.effect.getComputedTiming();
+        if (t && t.iterations !== Infinity) { try { a.finish(); } catch (_) { /* gone */ } }
+      }
+    });
     // back in the same game after a reload: go straight in
     const g = readStore(GUEST_STORE);
     if (inviteFromFriend && g && g.hostId === inviteFromFriend && g.name) {
