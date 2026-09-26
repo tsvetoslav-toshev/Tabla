@@ -449,6 +449,8 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
 .name-first { margin: 0 0 10px; font-size: 0.85rem; color: var(--gold-hi); }
 .invite { transition: opacity var(--t-med) var(--ease-out), filter var(--t-med) var(--ease-out); }
 .invite.locked { opacity: 0.35; filter: blur(1.5px); pointer-events: none; }
+.invite-gone { display: flex; gap: 10px; margin-bottom: 8px; }
+.invite-gone .btn { flex: 1; }
 .rename .row { display: flex; gap: 10px; margin-top: 8px; }
 .rename .row .btn { flex: 1; }
 
@@ -616,6 +618,10 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     <h1 id="setupTitle">Табла</h1>
     <p class="sub">за двама — на едно устройство или онлайн</p>
     <p class="join-note" id="joinNote" hidden>Поканен си на табла. Ти играеш с тъмните пулове — напиши името си.</p>
+    <div class="row invite-gone" id="inviteGone" hidden>
+      <button class="btn ghost" type="button" id="recheckBtn">Провери пак</button>
+      <button class="btn primary" type="button" id="toStartBtn">Към началото</button>
+    </div>
     <form id="setupForm" autocomplete="off">
       <label class="field host-only">
         <span class="token light" aria-hidden="true"></span>
@@ -1470,6 +1476,28 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
     host: (id, handlers) => Link('host', { id, ...handlers }),
     join: (hostId, handlers) => Link('guest', { hostId, ...handlers }),
     /** A downloaded copy (file://) has no address a friend could open: invite them to the website. */
+    /**
+     * Is the game behind an invite open right now? Knocks without saying
+     * hello (the host ignores it) and hangs up. cb('active' | 'missing' | 'error').
+     */
+    probe(hostId, cb) {
+      if (!root.Peer) { setTimeout(() => cb('error')); return; }
+      let done = false;
+      const peer = new root.Peer(peerOptions());
+      const finish = (result) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        setTimeout(() => { try { peer.destroy(); } catch (_) { /* gone */ } }, 100);
+        cb(result);
+      };
+      const timer = setTimeout(() => finish('missing'), 12000);
+      peer.on('open', () => {
+        const c = peer.connect(hostId, { reliable: true, serialization: 'json' });
+        c.on('open', () => finish('active'));
+      });
+      peer.on('error', (e) => finish(e && e.type === 'peer-unavailable' ? 'missing' : 'error'));
+    },
     inviteLink: (id) => (root.location.protocol === 'file:' ? PUBLIC_URL : root.location.origin + root.location.pathname + root.location.search) + '#join=' + id,
     joinIdFromUrl() {
       const m = /[#&]join=([a-z0-9-]+)/.exec(root.location.hash);
@@ -3294,6 +3322,7 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       $('#name1').value = g && g.name ? g.name : '';
       $('#startBtn').textContent = 'Влез в играта';
       $('#name1').closest('.field').querySelector('.lbl').textContent = 'Твоето име';
+      checkInvite(joinId);
     }
     $('#setupForm').addEventListener('submit', (e) => {
       e.preventDefault();
@@ -3308,6 +3337,8 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       }
       startMatch([n0, n1], matchLength);
     });
+    $('#recheckBtn').addEventListener('click', () => checkInvite(joinId));
+    $('#toStartBtn').addEventListener('click', () => { clearHash(); location.reload(); });
     $('#hostBtn').addEventListener('click', () => {
       $('#resumeBtn').hidden = true;
       online.myName = cleanName($('#name0').value, '');
@@ -3316,6 +3347,32 @@ kbd { font: 600 0.8em var(--font-ui); padding: 2px 6px; border-radius: 5px; bord
       chatLog = [];
       started = false;
       hostOnline(Net.newId(), false);
+    });
+  }
+
+  /**
+   * Before asking a friend for a name, find out whether the game behind the
+   * invite is open at all: a closed one says so instead of a name field.
+   */
+  function checkInvite(joinId) {
+    const field = $('#name1').closest('.field');
+    const note = $('#joinNote');
+    field.hidden = true;
+    $('#startBtn').hidden = true;
+    $('#inviteGone').hidden = true;
+    note.textContent = 'Проверявам дали играта е активна…';
+    Net.probe(joinId, (result) => {
+      if (result === 'active') {
+        note.textContent = 'Поканен си на табла. Ти играеш с тъмните пулове — напиши името си.';
+        field.hidden = false;
+        $('#startBtn').hidden = false;
+        $('#name1').focus({ preventScroll: true });
+        return;
+      }
+      note.textContent = result === 'error'
+        ? 'Този браузър не може да играе онлайн. Отвори линка в Safari или Chrome.'
+        : 'Тази игра не е активна — домакинът я е затворил или вече е приключила. Помоли за нов линк.';
+      $('#inviteGone').hidden = false;
     });
   }
 

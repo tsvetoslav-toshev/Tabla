@@ -224,6 +224,17 @@ async function settled(a, b, ms = 20000) {
   await host.waitForTimeout(400);
   const note = await host.textContent('#netStatus');
   console.log('host after the guest left:', note);
+
+  // the host ends the game: the invite now says so instead of asking for a name
+  await host.click('#menuBtn');
+  await host.click('#leaveBtn');
+  await host.click('#leaveBtn');
+  await host.waitForTimeout(1500);
+  const late = await open(browser, invite, 'late', { width: 800, height: 600 });
+  await late.waitForSelector('#inviteGone', { state: 'visible', timeout: 20000 });
+  if (await late.isVisible('#name1')) throw new Error('a closed invite still asks for a name');
+  console.log('closed invite:', await late.textContent('#joinNote'));
+  await late.screenshot({ path: path.join(out, 'online-closed-invite.png') });
   await browser.close();
   if (errors.length) { console.error(errors); process.exitCode = 1; } else console.log('online check passed');
 })().catch((e) => { console.error(e); console.error(errors); process.exit(1); });

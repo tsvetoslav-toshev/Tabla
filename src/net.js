@@ -182,6 +182,28 @@
     host: (id, handlers) => Link('host', { id, ...handlers }),
     join: (hostId, handlers) => Link('guest', { hostId, ...handlers }),
     /** A downloaded copy (file://) has no address a friend could open: invite them to the website. */
+    /**
+     * Is the game behind an invite open right now? Knocks without saying
+     * hello (the host ignores it) and hangs up. cb('active' | 'missing' | 'error').
+     */
+    probe(hostId, cb) {
+      if (!root.Peer) { setTimeout(() => cb('error')); return; }
+      let done = false;
+      const peer = new root.Peer(peerOptions());
+      const finish = (result) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        setTimeout(() => { try { peer.destroy(); } catch (_) { /* gone */ } }, 100);
+        cb(result);
+      };
+      const timer = setTimeout(() => finish('missing'), 12000);
+      peer.on('open', () => {
+        const c = peer.connect(hostId, { reliable: true, serialization: 'json' });
+        c.on('open', () => finish('active'));
+      });
+      peer.on('error', (e) => finish(e && e.type === 'peer-unavailable' ? 'missing' : 'error'));
+    },
     inviteLink: (id) => (root.location.protocol === 'file:' ? PUBLIC_URL : root.location.origin + root.location.pathname + root.location.search) + '#join=' + id,
     joinIdFromUrl() {
       const m = /[#&]join=([a-z0-9-]+)/.exec(root.location.hash);

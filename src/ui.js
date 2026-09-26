@@ -1814,6 +1814,7 @@
       $('#name1').value = g && g.name ? g.name : '';
       $('#startBtn').textContent = 'Влез в играта';
       $('#name1').closest('.field').querySelector('.lbl').textContent = 'Твоето име';
+      checkInvite(joinId);
     }
     $('#setupForm').addEventListener('submit', (e) => {
       e.preventDefault();
@@ -1828,6 +1829,8 @@
       }
       startMatch([n0, n1], matchLength);
     });
+    $('#recheckBtn').addEventListener('click', () => checkInvite(joinId));
+    $('#toStartBtn').addEventListener('click', () => { clearHash(); location.reload(); });
     $('#hostBtn').addEventListener('click', () => {
       $('#resumeBtn').hidden = true;
       online.myName = cleanName($('#name0').value, '');
@@ -1836,6 +1839,32 @@
       chatLog = [];
       started = false;
       hostOnline(Net.newId(), false);
+    });
+  }
+
+  /**
+   * Before asking a friend for a name, find out whether the game behind the
+   * invite is open at all: a closed one says so instead of a name field.
+   */
+  function checkInvite(joinId) {
+    const field = $('#name1').closest('.field');
+    const note = $('#joinNote');
+    field.hidden = true;
+    $('#startBtn').hidden = true;
+    $('#inviteGone').hidden = true;
+    note.textContent = 'Проверявам дали играта е активна…';
+    Net.probe(joinId, (result) => {
+      if (result === 'active') {
+        note.textContent = 'Поканен си на табла. Ти играеш с тъмните пулове — напиши името си.';
+        field.hidden = false;
+        $('#startBtn').hidden = false;
+        $('#name1').focus({ preventScroll: true });
+        return;
+      }
+      note.textContent = result === 'error'
+        ? 'Този браузър не може да играе онлайн. Отвори линка в Safari или Chrome.'
+        : 'Тази игра не е активна — домакинът я е затворил или вече е приключила. Помоли за нов линк.';
+      $('#inviteGone').hidden = false;
     });
   }
 
