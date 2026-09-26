@@ -1855,6 +1855,33 @@
     return [n0, n1];
   }
 
+  /**
+   * The start screen in two steps: first how you play (one phone, or online
+   * with a friend), then the names for that. A friend's invite skips step one.
+   */
+  function showSetupStep(step, mode) {
+    const form = $('#setupForm');
+    $('#stepMode').hidden = step !== 'mode';
+    form.hidden = step !== 'form';
+    if (step !== 'form') return;
+    form.classList.toggle('mode-local', mode === 'local');
+    form.classList.toggle('mode-online', mode === 'online');
+    const label = $('#name0Label');
+    label.textContent = mode === 'online' ? 'Твоето име ' : 'Светли пулове ';
+    const small = document.createElement('small');
+    small.textContent = mode === 'online' ? 'играеш със светлите' : 'прибират се долу вдясно';
+    label.appendChild(small);
+    $('#name0').placeholder = mode === 'online' ? 'Напиши името си' : 'Играч 1';
+    const first = mode === 'online' || !$('#name0').value ? '#name0' : '#name1';
+    setTimeout(() => $(first).focus({ preventScroll: true }), 60);
+  }
+
+  /** Back to the start: the choice of how to play. */
+  function openSetup() {
+    showSetupStep('mode');
+    showOverlay('#setup');
+  }
+
   function bindSetup(saved, joinId) {
     const chips = document.querySelectorAll('#lengthChips button');
     const pick = (v) => {
@@ -1864,7 +1891,7 @@
     chips.forEach((c) => c.addEventListener('click', () => { pick(+c.dataset.v); Sound.tap(); }));
     pick(saved && saved.matchLength !== undefined ? saved.matchLength : 5);
     if (saved && saved.state) {
-      $('#name0').value = saved.state.players[0].name;
+      $('#name0').value = saved.online ? saved.online.myName || '' : saved.state.players[0].name;
       if (!saved.online) $('#name1').value = saved.state.players[1].name;
       if (saved.state.phase !== 'matchover' && !joinId) {
         $('#resumeBtn').hidden = false;
@@ -1873,7 +1900,9 @@
       }
     }
     if (joinId) {
-      // opened from a friend's invite
+      // opened from a friend's invite: straight to joining, no choice of mode
+      showSetupStep('form', 'local');
+      $('#backBtn').hidden = true;
       $('#setupForm').classList.add('joining');
       $('#joinNote').hidden = false;
       document.querySelectorAll('.host-only').forEach((el) => { el.hidden = true; });
@@ -1896,13 +1925,20 @@
         return;
       }
       if (online.role === 'guest') return; // a second tap after joining
+      if ($('#setupForm').classList.contains('mode-online')) { $('#hostBtn').click(); return; } // Enter in the name field
       startMatch([n0, n1], matchLength);
     });
+    $('#modeLocal').addEventListener('click', () => { Sound.tap(); showSetupStep('form', 'local'); });
+    $('#modeOnline').addEventListener('click', () => { Sound.tap(); showSetupStep('form', 'online'); });
+    $('#backBtn').addEventListener('click', () => showSetupStep('mode'));
     $('#recheckBtn').addEventListener('click', () => checkInvite(joinId));
     $('#toStartBtn').addEventListener('click', () => { clearHash(); location.reload(); });
     $('#hostBtn').addEventListener('click', () => {
+      if (online.role) return;
+      const mine = cleanName($('#name0').value, '');
+      if (!mine) { nudge('#name0'); return; }
       $('#resumeBtn').hidden = true;
-      online.myName = cleanName($('#name0').value, '');
+      online.myName = mine;
       online.peerName = '';
       online.guestToken = '';
       chatLog = [];
@@ -1973,7 +2009,7 @@
     $('#lobbyCancel').addEventListener('click', () => {
       leaveOnline();
       hideOverlay('#lobby');
-      showOverlay('#setup');
+      openSetup();
     });
   }
 
@@ -2045,7 +2081,7 @@
           started = false;
           store(STORE, null);
           $('#resumeBtn').hidden = true;
-          showOverlay('#setup');
+          openSetup();
         }
         else if (act === 'undo') request({ k: 'undo' });
         else if (act === 'next') actMain();
@@ -2110,7 +2146,7 @@
       hideOverlay('#setup');
       joinOnline(inviteFromFriend, g.name);
     } else {
-      setTimeout(() => $(inviteFromFriend ? '#name1' : '#name0').focus({ preventScroll: true }), 300);
+      setTimeout(() => $(inviteFromFriend ? '#name1' : ($('#resumeBtn').hidden ? '#modeLocal' : '#resumeBtn')).focus({ preventScroll: true }), 300);
     }
     // for automated checks only
     window.__tabla = {
